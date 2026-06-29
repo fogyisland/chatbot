@@ -5,9 +5,10 @@ import { HealthController } from './webhook/health.controller';
 import { PlatformModule } from './platform/platform.module';
 import { QueueModule } from './queue/queue.module';
 import { RouterModule } from './router/router.module';
+import { HandlersModule } from './handlers/handlers.module';
 
 @Module({
-  imports: [ConfigModule, LoggerModule, PlatformModule, QueueModule, RouterModule],
+  imports: [ConfigModule, LoggerModule, PlatformModule, QueueModule, RouterModule, HandlersModule],
   controllers: [HealthController],
 })
 export class AppModule {}
