@@ -1,0 +1,15 @@
+{
+  "name": "multiplatform-chatbot",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "dev:bot": "pnpm --filter @mpcb/bot-core start:dev",
+    "dev:admin": "pnpm --filter @mpcb/admin-web dev"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
