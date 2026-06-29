@@ -7,12 +7,13 @@ import { QueueModule } from './queue/queue.module';
 import { RouterModule } from './router/router.module';
 import { HandlersModule } from './handlers/handlers.module';
 import { WorkerModule } from './queue/worker.module';
+import { AdminApiModule } from './admin-api/admin.module';
 
 @Module({
   imports: [
     ConfigModule, LoggerModule,
     PlatformModule, QueueModule, RouterModule,
-    HandlersModule, WorkerModule,
+    HandlersModule, WorkerModule, AdminApiModule,
   ],
   controllers: [HealthController],
 })
