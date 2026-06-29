@@ -859,6 +859,24 @@ export class ConfigService {
   get deepseekApiKey(): string | undefined {
     return process.env.DEEPSEEK_API_KEY;
   }
+  get wechatToken(): string {
+    return process.env.WECHAT_TOKEN ?? '';
+  }
+  get wechatApiBase(): string {
+    return process.env.WECHAT_API_BASE ?? 'https://qyapi.weixin.qq.com';
+  }
+  get teamsAppId(): string {
+    return process.env.TEAMS_APP_ID ?? '';
+  }
+  get teamsAppSecret(): string {
+    return process.env.TEAMS_APP_SECRET ?? '';
+  }
+  get dingtalkAppKey(): string {
+    return process.env.DINGTALK_APP_KEY ?? '';
+  }
+  get dingtalkAppSecret(): string {
+    return process.env.DINGTALK_APP_SECRET ?? '';
+  }
 }
 ```
 
@@ -1248,14 +1266,20 @@ export class WeChatController {}
 
 ```ts
 import { Module } from '@nestjs/common';
+import { ConfigService } from '../common/config/config.service';
 import { WeChatAdapter } from './wechat/wechat.adapter';
 import { WeChatController } from './wechat/wechat.controller';
 
 @Module({
   controllers: [WeChatController],
   providers: [
-    { provide: 'WECHAT_TOKEN', useValue: process.env.WECHAT_TOKEN ?? '' },
-    WeChatAdapter,
+    {
+      provide: WeChatAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new WeChatAdapter(cfg.wechatToken, {
+        apiBase: cfg.wechatApiBase,
+      }),
+    },
   ],
   exports: [WeChatAdapter],
 })
@@ -1502,6 +1526,7 @@ export class TeamsController {}
 
 ```ts
 import { Module } from '@nestjs/common';
+import { ConfigService } from '../common/config/config.service';
 import { WeChatAdapter } from './wechat/wechat.adapter';
 import { WeChatController } from './wechat/wechat.controller';
 import { TeamsAdapter } from './teams/teams.adapter';
@@ -1510,11 +1535,21 @@ import { TeamsController } from './teams/teams.controller';
 @Module({
   controllers: [WeChatController, TeamsController],
   providers: [
-    { provide: 'WECHAT_TOKEN', useValue: process.env.WECHAT_TOKEN ?? '' },
-    { provide: 'TEAMS_APP_ID', useValue: process.env.TEAMS_APP_ID ?? '' },
-    { provide: 'TEAMS_APP_SECRET', useValue: process.env.TEAMS_APP_SECRET ?? '' },
-    WeChatAdapter,
-    TeamsAdapter,
+    {
+      provide: WeChatAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new WeChatAdapter(cfg.wechatToken, {
+        apiBase: cfg.wechatApiBase,
+      }),
+    },
+    {
+      provide: TeamsAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new TeamsAdapter({
+        appId: cfg.teamsAppId,
+        appSecret: cfg.teamsAppSecret,
+      }),
+    },
   ],
   exports: [WeChatAdapter, TeamsAdapter],
 })
@@ -1664,6 +1699,7 @@ export class DingTalkController {}
 
 ```ts
 import { Module } from '@nestjs/common';
+import { ConfigService } from '../common/config/config.service';
 import { WeChatAdapter } from './wechat/wechat.adapter';
 import { WeChatController } from './wechat/wechat.controller';
 import { TeamsAdapter } from './teams/teams.adapter';
@@ -1674,14 +1710,29 @@ import { DingTalkController } from './dingtalk/dingtalk.controller';
 @Module({
   controllers: [WeChatController, TeamsController, DingTalkController],
   providers: [
-    { provide: 'WECHAT_TOKEN', useValue: process.env.WECHAT_TOKEN ?? '' },
-    { provide: 'TEAMS_APP_ID', useValue: process.env.TEAMS_APP_ID ?? '' },
-    { provide: 'TEAMS_APP_SECRET', useValue: process.env.TEAMS_APP_SECRET ?? '' },
-    { provide: 'DINGTALK_APP_KEY', useValue: process.env.DINGTALK_APP_KEY ?? '' },
-    { provide: 'DINGTALK_APP_SECRET', useValue: process.env.DINGTALK_APP_SECRET ?? '' },
-    WeChatAdapter,
-    TeamsAdapter,
-    DingTalkAdapter,
+    {
+      provide: WeChatAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new WeChatAdapter(cfg.wechatToken, {
+        apiBase: cfg.wechatApiBase,
+      }),
+    },
+    {
+      provide: TeamsAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new TeamsAdapter({
+        appId: cfg.teamsAppId,
+        appSecret: cfg.teamsAppSecret,
+      }),
+    },
+    {
+      provide: DingTalkAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => new DingTalkAdapter({
+        appKey: cfg.dingtalkAppKey,
+        appSecret: cfg.dingtalkAppSecret,
+      }),
+    },
   ],
   exports: [WeChatAdapter, TeamsAdapter, DingTalkAdapter],
 })
