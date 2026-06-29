@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "test": "jest",
-    "lint": "next lint"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@mpcb/shared": "workspace:*",

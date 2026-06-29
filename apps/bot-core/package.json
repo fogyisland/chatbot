@@ -7,7 +7,7 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "test": "jest",
-    "lint": "eslint src --ext .ts"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@mpcb/shared": "workspace:*",

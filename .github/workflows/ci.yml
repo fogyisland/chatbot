@@ -39,6 +39,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile || pnpm install
       - run: pnpm --filter @mpcb/shared build
+      # Typecheck / lint gate: every workspace's `lint` script runs `tsc
+      # --noEmit`, which is the project's lint per the v0.1.0 strict-mode
+      # contract. Run BEFORE the per-package builds so type errors surface
+      # with the offending package name rather than swallowed by nest/next.
+      - run: pnpm -r lint
       - run: pnpm --filter @mpcb/bot-core build
       - run: pnpm --filter @mpcb/admin-web build
       - run: pnpm -r test

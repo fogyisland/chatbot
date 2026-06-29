@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "test": "jest",
-    "lint": "echo 'lint shared'"
+    "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
