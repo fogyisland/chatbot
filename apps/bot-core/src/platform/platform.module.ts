@@ -4,9 +4,11 @@ import { WeChatAdapter } from './wechat/wechat.adapter';
 import { WeChatController } from './wechat/wechat.controller';
 import { TeamsAdapter } from './teams/teams.adapter';
 import { TeamsController } from './teams/teams.controller';
+import { DingTalkAdapter } from './dingtalk/dingtalk.adapter';
+import { DingTalkController } from './dingtalk/dingtalk.controller';
 
 @Module({
-  controllers: [WeChatController, TeamsController],
+  controllers: [WeChatController, TeamsController, DingTalkController],
   providers: [
     {
       provide: WeChatAdapter,
@@ -23,7 +25,16 @@ import { TeamsController } from './teams/teams.controller';
           appSecret: cfg.teamsAppSecret,
         }),
     },
+    {
+      provide: DingTalkAdapter,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) =>
+        new DingTalkAdapter({
+          appKey: cfg.dingtalkAppKey,
+          appSecret: cfg.dingtalkAppSecret,
+        }),
+    },
   ],
-  exports: [WeChatAdapter, TeamsAdapter],
+  exports: [WeChatAdapter, TeamsAdapter, DingTalkAdapter],
 })
 export class PlatformModule {}
