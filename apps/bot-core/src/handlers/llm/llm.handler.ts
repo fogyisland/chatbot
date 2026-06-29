@@ -22,6 +22,9 @@ export class LlmHandler implements Handler {
         ...ctx.history.slice(-5),
         { role: 'user', content: input.prompt },
       ],
+      // Forward caller-supplied abort signal so a 30s timeout (or worker
+      // shutdown) cancels the upstream LLM request.
+      signal: ctx.abortSignal,
     };
     try {
       const resp = await this.provider.chat(req);

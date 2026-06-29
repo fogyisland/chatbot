@@ -40,6 +40,8 @@ export class KbHandler implements Handler {
       messages: [
         { role: 'user', content: `上下文:\n${context}\n\n问题:${input.query}` },
       ],
+      // Forward abort signal so a 30s timeout cancels both embedder and LLM.
+      signal: ctx.abortSignal,
     };
     try {
       const resp = await this.deps.llm.chat(req);
