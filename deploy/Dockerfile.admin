@@ -4,6 +4,9 @@ RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/admin-web apps/admin-web
+# NOTE: NEXT_PUBLIC_BOT_URL is inlined at build time by Next.js. Set it via
+# --build-arg NEXT_PUBLIC_BOT_URL=… (or in docker-compose environment at
+# build) — runtime env won't reach the browser bundle.
 RUN pnpm install --frozen-lockfile || pnpm install
 RUN pnpm --filter @mpcb/shared build
 RUN pnpm --filter @mpcb/admin-web build
