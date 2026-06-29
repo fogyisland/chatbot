@@ -6,9 +6,14 @@ import { PlatformModule } from './platform/platform.module';
 import { QueueModule } from './queue/queue.module';
 import { RouterModule } from './router/router.module';
 import { HandlersModule } from './handlers/handlers.module';
+import { WorkerModule } from './queue/worker.module';
 
 @Module({
-  imports: [ConfigModule, LoggerModule, PlatformModule, QueueModule, RouterModule, HandlersModule],
+  imports: [
+    ConfigModule, LoggerModule,
+    PlatformModule, QueueModule, RouterModule,
+    HandlersModule, WorkerModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}
