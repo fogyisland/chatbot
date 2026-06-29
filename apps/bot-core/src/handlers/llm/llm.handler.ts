@@ -16,7 +16,7 @@ export class LlmHandler implements Handler {
 
   async handle(input: RouteDecision & { kind: 'llm' }, ctx: HandlerContext): Promise<NormalizedReply> {
     const req: ChatRequest = {
-      model: 'default',
+      model: this.provider.defaultModel,
       systemPrompt: input.systemPrompt,
       messages: [
         ...ctx.history.slice(-5),

@@ -35,7 +35,7 @@ export class KbHandler implements Handler {
     }
     const context = top.map((h, i) => `[${i + 1}] ${h.payload?.doc_title ?? ''}: ${h.payload?.content_preview ?? ''}`).join('\n');
     const req: ChatRequest = {
-      model: 'default',
+      model: this.deps.llm.defaultModel,
       systemPrompt: SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: `上下文:\n${context}\n\n问题:${input.query}` },
