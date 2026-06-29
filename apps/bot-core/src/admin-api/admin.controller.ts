@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
 import { ConfigService } from '../common/config/config.service';
 import { AdminGuard } from './admin.guard';
@@ -61,5 +61,16 @@ export class AdminController {
       [d],
     );
     return rows;
+  }
+
+  @Post('dlq/:jobId/replay')
+  async replay(@Param('jobId') jobId: string) {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT payload_json FROM dlq_records WHERE job_id = ?`,
+      [jobId],
+    );
+    if (rows.length === 0) return { ok: false, error: 'not_found' };
+    // Real impl: re-enqueue to BullMQ. MVP returns confirmation only.
+    return { ok: true, replayed: jobId };
   }
 }

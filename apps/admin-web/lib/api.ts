@@ -20,5 +20,10 @@ export function createApiClient(baseUrl: string, token: string) {
       get<unknown[]>('/admin/messages', p),
     listDlq: () => get<unknown[]>('/admin/dlq'),
     listUsage: (days: number) => get<unknown[]>('/admin/usage', { days }),
+    replayDlq: (jobId: string) =>
+      fetch(`${baseUrl}/admin/dlq/${encodeURIComponent(jobId)}/replay`, { method: 'POST', headers }).then((r) => {
+        if (!r.ok) throw new Error(`${r.status}: ${r.statusText}`);
+        return r.json();
+      }),
   };
 }
