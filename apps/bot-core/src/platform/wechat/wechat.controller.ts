@@ -2,12 +2,14 @@ import { Controller, Post, Req, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
 import { WeChatAdapter } from './wechat.adapter';
 import { QueueService } from '../../queue/queue.service';
+import { MessageLogService } from '../../messages/message-log.service';
 
 @Controller('bot/wechat')
 export class WeChatController {
   constructor(
     private readonly adapter: WeChatAdapter,
     private readonly queue: QueueService,
+    private readonly messageLog: MessageLogService,
   ) {}
 
   @Post('callback')
@@ -17,6 +19,7 @@ export class WeChatController {
     }
     const msg = await this.adapter.parseInbound({ headers: req.headers as any, body: req.body, query: req.query as any });
     if (!msg.msgId || !msg.text) return 'success';
+    await this.messageLog.upsertUser(msg);
     await this.queue.enqueueMessage(msg);
     return 'success';
   }

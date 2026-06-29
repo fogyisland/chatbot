@@ -6,6 +6,8 @@ import { TeamsAdapter } from './teams/teams.adapter';
 import { TeamsController } from './teams/teams.controller';
 import { DingTalkAdapter } from './dingtalk/dingtalk.adapter';
 import { DingTalkController } from './dingtalk/dingtalk.controller';
+import { PlatformAdapter, PLATFORM_ADAPTER } from './platform-adapter.interface';
+import { PlatformName } from '@mpcb/shared';
 
 @Module({
   controllers: [WeChatController, TeamsController, DingTalkController],
@@ -34,7 +36,29 @@ import { DingTalkController } from './dingtalk/dingtalk.controller';
           appSecret: cfg.dingtalkAppSecret,
         }),
     },
+    {
+      // Multi-binding: every registered PlatformAdapter is exposed as an
+      // array under the PLATFORM_ADAPTER token. Consumers build a
+      // Map<PlatformName, PlatformAdapter> from this list at construction.
+      provide: PLATFORM_ADAPTER,
+      inject: [WeChatAdapter, TeamsAdapter, DingTalkAdapter],
+      useFactory: (
+        wechat: WeChatAdapter,
+        teams: TeamsAdapter,
+        dingtalk: DingTalkAdapter,
+      ): PlatformAdapter[] => [wechat, teams, dingtalk],
+    },
   ],
-  exports: [WeChatAdapter, TeamsAdapter, DingTalkAdapter],
+  exports: [WeChatAdapter, TeamsAdapter, DingTalkAdapter, PLATFORM_ADAPTER],
 })
 export class PlatformModule {}
+
+/**
+ * Build a Map<PlatformName, PlatformAdapter> from the multi-binding array.
+ * Convenience helper for DI sites that want a lookup map rather than an array.
+ */
+export function buildAdapterMap(adapters: PlatformAdapter[]): Map<PlatformName, PlatformAdapter> {
+  const m = new Map<PlatformName, PlatformAdapter>();
+  for (const a of adapters) m.set(a.platform, a);
+  return m;
+}

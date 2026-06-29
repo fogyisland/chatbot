@@ -8,12 +8,14 @@ import { RouterModule } from './router/router.module';
 import { HandlersModule } from './handlers/handlers.module';
 import { WorkerModule } from './queue/worker.module';
 import { AdminApiModule } from './admin-api/admin.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
     ConfigModule, LoggerModule,
     PlatformModule, QueueModule, RouterModule,
     HandlersModule, WorkerModule, AdminApiModule,
+    MessagesModule,
   ],
   controllers: [HealthController],
 })
