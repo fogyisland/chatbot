@@ -4,9 +4,10 @@ import { LoggerModule } from './common/logger/logger.module';
 import { HealthController } from './webhook/health.controller';
 import { PlatformModule } from './platform/platform.module';
 import { QueueModule } from './queue/queue.module';
+import { RouterModule } from './router/router.module';
 
 @Module({
-  imports: [ConfigModule, LoggerModule, PlatformModule, QueueModule],
+  imports: [ConfigModule, LoggerModule, PlatformModule, QueueModule, RouterModule],
   controllers: [HealthController],
 })
 export class AppModule {}
