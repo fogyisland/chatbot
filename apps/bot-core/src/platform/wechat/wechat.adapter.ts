@@ -19,7 +19,10 @@ export class WeChatAdapter implements PlatformAdapter {
   readonly platform: PlatformName = 'wechat';
   private readonly logger = new Logger(WeChatAdapter.name);
 
-  constructor(private readonly token: string) {}
+  constructor(
+    private readonly token: string,
+    private readonly options: { accessToken?: string; apiBase?: string } = {},
+  ) {}
 
   verifySignature(req: RawRequest): boolean {
     const signature = String(req.query.msg_signature ?? '');
@@ -49,9 +52,28 @@ export class WeChatAdapter implements PlatformAdapter {
     };
   }
 
-  async sendReply(_reply: NormalizedReply, _target: ChatTarget): Promise<SendResult> {
-    this.logger.warn('WeChat sendReply not yet implemented - to be done in Task 8');
-    return { ok: false, error: 'not_implemented' };
+  async sendReply(reply: NormalizedReply, target: ChatTarget): Promise<SendResult> {
+    if (!reply.text) return { ok: true };
+    const apiBase = this.options.apiBase ?? 'https://qyapi.weixin.qq.com';
+    const accessToken = this.options.accessToken ?? '';
+    const url = `${apiBase}/cgi-bin/message/custom/send?access_token=${accessToken}`;
+    const body: any = {
+      touser: target.chatId,
+      msgtype: 'text',
+      text: { content: reply.text },
+    };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json: any = await res.json();
+      if (json.errcode === 0) return { ok: true };
+      return { ok: false, error: `errcode=${json.errcode} errmsg=${json.errmsg}` };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   }
 
   async uploadMedia(_buffer: Buffer, _type: MediaType): Promise<MediaRef> {

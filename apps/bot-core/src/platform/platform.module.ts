@@ -10,7 +10,7 @@ import { WeChatController } from './wechat/wechat.controller';
       provide: WeChatAdapter,
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) =>
-        new WeChatAdapter(cfg.wechatToken),
+        new WeChatAdapter(cfg.wechatToken, { apiBase: cfg.wechatApiBase }),
     },
   ],
   exports: [WeChatAdapter],
