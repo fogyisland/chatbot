@@ -1,0 +1,24 @@
+# Build stage
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/bot-core apps/bot-core
+RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm --filter @mpcb/shared build
+RUN pnpm --filter @mpcb/bot-core build
+
+# Runtime stage
+FROM node:20-alpine
+WORKDIR /app
+RUN corepack enable
+ENV NODE_ENV=production
+COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/packages/shared/dist packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json packages/shared/package.json
+COPY --from=builder /app/apps/bot-core/dist apps/bot-core/dist
+COPY --from=builder /app/apps/bot-core/package.json apps/bot-core/package.json
+WORKDIR /app/apps/bot-core
+EXPOSE 3000
+CMD ["node", "dist/main.js"]

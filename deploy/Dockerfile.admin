@@ -1,0 +1,20 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/admin-web apps/admin-web
+RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm --filter @mpcb/shared build
+RUN pnpm --filter @mpcb/admin-web build
+
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/apps/admin-web/.next apps/admin-web/.next
+COPY --from=builder /app/apps/admin-web/public apps/admin-web/public
+COPY --from=builder /app/apps/admin-web/package.json apps/admin-web/package.json
+COPY --from=builder /app/apps/admin-web/next.config.js apps/admin-web/next.config.js
+WORKDIR /app/apps/admin-web
+EXPOSE 3001
+CMD ["npx", "next", "start", "-p", "3001"]
