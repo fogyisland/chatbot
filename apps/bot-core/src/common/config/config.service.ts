@@ -50,6 +50,15 @@ export class ConfigService {
   get wechatApiBase(): string {
     return process.env.WECHAT_API_BASE ?? 'https://qyapi.weixin.qq.com';
   }
+  get wechatCorpId(): string {
+    return process.env.WECHAT_CORP_ID ?? '';
+  }
+  get wechatCorpSecret(): string {
+    return process.env.WECHAT_CORP_SECRET ?? '';
+  }
+  get adminApiToken(): string {
+    return process.env.ADMIN_API_TOKEN ?? '';
+  }
   get teamsAppId(): string {
     return process.env.TEAMS_APP_ID ?? '';
   }
