@@ -12,6 +12,9 @@ export interface ToolDef<TArgs = any> {
 
 interface RateCounter { count: number; resetAt: number }
 
+/** When the map exceeds this many entries, sweep all expired counters. */
+const PRUNE_THRESHOLD = 10_000;
+
 @Injectable()
 export class ToolRegistry implements Handler {
   readonly name = 'tool';
@@ -22,9 +25,39 @@ export class ToolRegistry implements Handler {
   register(t: ToolDef): void { this.tools.set(t.name, t); }
   list(): ToolDef[] { return [...this.tools.values()]; }
 
+  /**
+   * Cap the rate-counter map so it can't grow without bound under churn.
+   * Called from checkRate(); the work is gated behind PRUNE_THRESHOLD so the
+   * hot path stays cheap.
+   *
+   * Strategy: (1) drop every entry whose window has elapsed, then (2) if the
+   * map is still above the threshold (e.g. a burst of distinct users all
+   * landing in the same fresh window), evict the entry with the earliest
+   * `resetAt`. This guarantees size stays O(threshold) even under attack.
+   */
+  private pruneExpired(now: number): void {
+    if (this.rateCounters.size < PRUNE_THRESHOLD) return;
+    for (const [k, v] of this.rateCounters) {
+      if (v.resetAt <= now) this.rateCounters.delete(k);
+    }
+    while (this.rateCounters.size >= PRUNE_THRESHOLD) {
+      let oldestKey: string | null = null;
+      let oldestReset = Infinity;
+      for (const [k, v] of this.rateCounters) {
+        if (v.resetAt < oldestReset) {
+          oldestReset = v.resetAt;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey === null) break;
+      this.rateCounters.delete(oldestKey);
+    }
+  }
+
   private checkRate(toolName: string, userId: string, limit: number): boolean {
     const key = `${userId}:${toolName}`;
     const now = Date.now();
+    this.pruneExpired(now);
     const c = this.rateCounters.get(key);
     if (!c || c.resetAt < now) {
       this.rateCounters.set(key, { count: 1, resetAt: now + 60_000 });
