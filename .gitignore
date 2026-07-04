@@ -9,6 +9,9 @@ build/
 .next/
 out/
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # Environment
 .env
 .env.local
@@ -19,6 +22,7 @@ out/
 logs/
 *.log
 npm-debug.log*
+pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
@@ -39,6 +43,9 @@ coverage/
 # Docker
 .docker/
 docker-compose.override.yml
+
+# Claude Code local state
+.claude/
 
 # Temp
 tmp/
