@@ -1,22 +1,28 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, OnModuleDestroy, OnModuleInit, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
 import { ConfigService } from '../common/config/config.service';
 import { AdminGuard } from './admin.guard';
 
 @Controller('admin')
 @UseGuards(AdminGuard)
-export class AdminController {
-  private pool: Pool;
+export class AdminController implements OnModuleInit, OnModuleDestroy {
+  private pool!: Pool;
 
-  constructor(private readonly cfg: ConfigService) {
+  constructor(private readonly cfg: ConfigService) {}
+
+  onModuleInit(): void {
     this.pool = createPool({
-      host: cfg.mysqlHost,
-      port: cfg.mysqlPort,
-      user: cfg.mysqlUser,
-      password: cfg.mysqlPassword,
-      database: cfg.mysqlDatabase,
+      host: this.cfg.mysqlHost,
+      port: this.cfg.mysqlPort,
+      user: this.cfg.mysqlUser,
+      password: this.cfg.mysqlPassword,
+      database: this.cfg.mysqlDatabase,
       connectionLimit: 5,
     });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.pool) await this.pool.end();
   }
 
   @Get('messages')
