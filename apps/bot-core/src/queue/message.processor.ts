@@ -7,6 +7,7 @@ import { KbHandler } from '../handlers/kb/kb.handler';
 import { ToolRegistry } from '../handlers/tool/tool.handler';
 import { RouteDecision } from '@mpcb/shared';
 import { MessageLogService } from '../messages/message-log.service';
+import { ConversationService, ConversationTurn } from '../conversation/conversation.service';
 
 export interface ProcessResult {
   reply: NormalizedReply;
@@ -24,21 +25,35 @@ export class MessageProcessor {
     private readonly router: RouterService,
     private readonly handlers: { llm: LlmHandler; kb: KbHandler; tool: ToolRegistry },
     private readonly messageLog: MessageLogService,
+    private readonly conversation: ConversationService,
   ) {}
 
   async process(msg: NormalizedMessage): Promise<ProcessResult> {
     // 30s timeout so a stuck downstream never holds the worker slot forever.
     const abortSignal = AbortSignal.timeout(30_000);
 
+    let history: ConversationTurn[] = [];
+    try {
+      history = await this.conversation.loadHistory(
+        msg.platform,
+        msg.chatId,
+        msg.senderId,
+        Date.now(),
+      );
+    } catch (err) {
+      this.logger.warn(`loadHistory threw; degrading to empty history: ${err instanceof Error ? err.message : String(err)}`);
+      history = [];
+    }
+
     const decision = await this.router.route(msg, {
       userId: msg.senderId,
       chatId: msg.chatId,
       platform: msg.platform,
-      history: [],
+      history,
       abortSignal,
     });
 
-    const reply = await this.dispatch(decision, msg, abortSignal);
+    const reply = await this.dispatch(decision, msg, abortSignal, history);
     const target = { chatId: msg.chatId, chatType: msg.chatType };
 
     // Log assistant reply BEFORE sendReply — that way even if the platform
@@ -66,12 +81,17 @@ export class MessageProcessor {
     }
   }
 
-  private async dispatch(decision: RouteDecision, msg: NormalizedMessage, signal: AbortSignal): Promise<NormalizedReply> {
+  private async dispatch(
+    decision: RouteDecision,
+    msg: NormalizedMessage,
+    signal: AbortSignal,
+    history: ConversationTurn[],
+  ): Promise<NormalizedReply> {
     const ctx = {
       userId: msg.senderId,
       chatId: msg.chatId,
       platform: msg.platform,
-      history: [],
+      history,
       abortSignal: signal,
     };
     switch (decision.kind) {

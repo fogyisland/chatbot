@@ -16,9 +16,11 @@ import { createWorker } from './worker';
 import { MessageLogService } from '../messages/message-log.service';
 import { MessagesModule } from '../messages/messages.module';
 import { PlatformAdapter, PLATFORM_ADAPTER } from '../platform/platform-adapter.interface';
+import { ConversationModule } from '../conversation/conversation.module';
+import { ConversationService } from '../conversation/conversation.service';
 
 @Module({
-  imports: [QueueModule, HandlersModule, RouterModule, PlatformModule, MessagesModule],
+  imports: [QueueModule, HandlersModule, RouterModule, PlatformModule, MessagesModule, ConversationModule],
 })
 export class WorkerModule implements OnModuleInit, OnModuleDestroy {
   private worker: Worker | null = null;
@@ -33,6 +35,7 @@ export class WorkerModule implements OnModuleInit, OnModuleDestroy {
     @Inject(PLATFORM_ADAPTER) private readonly adapters: PlatformAdapter[],
     @Inject('DLQ_INSTANCE') private readonly dlq: Queue,
     private readonly messageLog: MessageLogService,
+    private readonly conversation: ConversationService,
   ) {}
 
   onModuleInit() {
@@ -42,6 +45,7 @@ export class WorkerModule implements OnModuleInit, OnModuleDestroy {
       this.router,
       { llm: this.llm, kb: this.kb, tool: this.tool },
       this.messageLog,
+      this.conversation,
     );
 
     this.pool = createPool({
