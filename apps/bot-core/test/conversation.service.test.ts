@@ -1,3 +1,4 @@
+import { Test } from '@nestjs/testing';
 import { ConversationService } from '../src/conversation/conversation.service';
 import { ConfigService } from '../src/common/config/config.service';
 
@@ -117,5 +118,27 @@ describe('ConversationService.loadHistory', () => {
     expect(out).toEqual([]);
     expect(warnMock).toHaveBeenCalledTimes(1);
     expect(String(warnMock.mock.calls[0][0])).toContain('history load failed');
+  });
+});
+
+describe('ConversationService DI', () => {
+  it('can be constructed via NestJS DI without external Pool/LOGGER providers', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ConversationService,
+        {
+          provide: ConfigService,
+          useValue: {
+            mysqlHost: 'h',
+            mysqlPort: 3306,
+            mysqlUser: 'u',
+            mysqlPassword: '',
+            mysqlDatabase: 'd',
+          },
+        },
+      ],
+    }).compile();
+    expect(moduleRef.get(ConversationService)).toBeInstanceOf(ConversationService);
+    await moduleRef.close();
   });
 });
