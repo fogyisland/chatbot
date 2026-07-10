@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.1 — 2026-07-10
+
+Post-review fixes over v0.2.0. The v0.2.0 tag pointed at a commit that crashes the worker on startup (DI graph could not resolve `ConversationService`'s `Pool` / `'LOGGER'` dependencies). All consumers should use v0.2.1 instead.
+
+**Critical fix (production-startup blocker):**
+- `ConversationService` constructor switched to the existing `MessageLogService` pattern: takes only `ConfigService`, owns a `new Logger(ConversationService.name)`, and lazy-allocates its `Pool` on first query. Worker now boots and resolves DI cleanly. New unit test asserts the service constructs via `Test.createTestingModule(...).compile()` (would have failed against v0.2.0).
+
+**Behavioral fix:**
+- `LlmHandler.handle()` no longer caps `ctx.history` at `slice(-5)`. Now consumes the full `HISTORY_LIMIT=10` from `ConversationService` per the v0.2 spec. Regression test updated accordingly.
+
+**Schema fix:**
+- New migration `0002_messages_session_index.sql` adds a composite index `idx_messages_session (platform, chat_id, sender_id, created_at)` so the `loadHistory` query is index-supported (was: full scan per query under worker concurrency).
+
+**Docs:**
+- `docs/superpowers/specs/2026-07-04-multi-turn-conversation-design.md` corrected to reference `sender_id` (the actual column name) instead of the never-existed `user_id`.
+
+Tests: 101/101 across 29 suites (was 100/100 in v0.2.0; +1 NestJS DI construction test). `pnpm build` green. `pnpm -r lint` green.
+
+> Note: the v0.2.0 tag remains at the buggy commit `809a753` for history; DO NOT use it in production. Use `v0.2.1` at `9146ce3` (or `master` HEAD).
+
 ## v0.2.0 — 2026-07-04
 
 Multi-turn conversation context for the LLM handler.
