@@ -15,6 +15,7 @@ import { NormalizedMessage, NormalizedReply } from '@mpcb/shared';
 @Injectable()
 export class MessageLogService {
   private readonly logger = new Logger(MessageLogService.name);
+  private static readonly FORGET_BOUNDARY_CONTENT = '__forget_boundary__';
   private pool: Pool | null = null;
 
   constructor(private readonly cfg: ConfigService) {}
@@ -65,6 +66,24 @@ export class MessageLogService {
     } catch (err) {
       this.logger.warn(`upsertAssistant failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * Write a soft-boundary row into the messages table so the ConversationService
+   * walker breaks at this point. Uses role='system' + content='__forget_boundary__'
+   * as the sentinel. Idempotent on msg_id via ON DUPLICATE KEY UPDATE.
+   *
+   * Unlike upsertUser/upsertAssistant, this PROPAGATES errors — callers
+   * (MessageProcessor) need to know whether the boundary was actually written.
+   */
+  async upsertForgetBoundary(msg: NormalizedMessage): Promise<void> {
+    if (!msg.msgId) return;
+    await this.getPool().query(
+      `INSERT INTO messages (msg_id, platform, chat_id, sender_id, role, content)
+       VALUES (?, ?, ?, ?, 'system', ?)
+       ON DUPLICATE KEY UPDATE id = id`,
+      [msg.msgId, msg.platform, msg.chatId, msg.senderId, MessageLogService.FORGET_BOUNDARY_CONTENT],
+    );
   }
 
   async close(): Promise<void> {

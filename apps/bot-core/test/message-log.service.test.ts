@@ -80,4 +80,42 @@ describe('MessageLogService', () => {
     });
     expect(queries.length).toBe(0);
   });
+
+  it('upsertForgetBoundary writes a system role row with the forget marker content', async () => {
+    const queries: Array<{ sql: string; params: any[] }> = [];
+    const fakePool: any = {
+      query: async (sql: string, params: any[]) => {
+        queries.push({ sql, params });
+        return [{ affectedRows: 1 }];
+      },
+    };
+    const cfg: any = { mysqlHost: 'h', mysqlPort: 3306, mysqlUser: 'u', mysqlPassword: 'p', mysqlDatabase: 'd' };
+    const svc = new MessageLogService(cfg);
+    (svc as any).pool = fakePool;
+
+    await svc.upsertForgetBoundary({
+      msgId: 'forget-1', platform: 'wechat', chatId: 'c1', chatType: 'group',
+      senderId: 'u1', senderName: 'A', text: '/forget', mentions: [], attachments: [], rawTimestamp: 0,
+    });
+
+    expect(queries.length).toBe(1);
+    const q = queries[0];
+    expect(q.sql).toContain('INSERT INTO messages');
+    expect(q.sql).toContain("'system'");
+    expect(q.sql).toContain('ON DUPLICATE KEY UPDATE');
+    expect(q.params).toEqual(['forget-1', 'wechat', 'c1', 'u1', '__forget_boundary__']);
+  });
+
+  it('upsertForgetBoundary throws on DB error (does not swallow)', async () => {
+    const cfg: any = { mysqlHost: 'h', mysqlPort: 3306, mysqlUser: 'u', mysqlPassword: 'p', mysqlDatabase: 'd' };
+    const svc = new MessageLogService(cfg);
+    (svc as any).pool = { query: async () => { throw new Error('db down'); } };
+
+    await expect(
+      svc.upsertForgetBoundary({
+        msgId: 'forget-2', platform: 'wechat', chatId: 'c1', chatType: 'group',
+        senderId: 'u1', senderName: 'A', text: '/forget', mentions: [], attachments: [], rawTimestamp: 0,
+      }),
+    ).rejects.toThrow('db down');
+  });
 });
