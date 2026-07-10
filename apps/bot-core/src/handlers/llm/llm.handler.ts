@@ -19,7 +19,7 @@ export class LlmHandler implements Handler {
       model: this.provider.defaultModel,
       systemPrompt: input.systemPrompt,
       messages: [
-        ...ctx.history.slice(-5),
+        ...ctx.history,
         { role: 'user', content: input.prompt },
       ],
       // Forward caller-supplied abort signal so a 30s timeout (or worker

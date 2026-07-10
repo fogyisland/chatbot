@@ -54,7 +54,7 @@ describe('LlmHandler history propagation', () => {
     ]);
   });
 
-  it('caps history slice to last 5 entries before appending current prompt (matches existing slice(-5) in handler)', async () => {
+  it('passes full ctx.history through (ConversationService caps at HISTORY_LIMIT=10)', async () => {
     const cap: { messages?: any[] } = {};
     const handler = makeHandler(cap);
     const history = Array.from({ length: 10 }, (_, i) => ({
@@ -63,8 +63,8 @@ describe('LlmHandler history propagation', () => {
     }));
     const ctx = baseCtx({ history });
     await handler.handle({ kind: 'llm', prompt: 'NOW' } as any, ctx);
-    expect(cap.messages).toHaveLength(6);
-    expect(cap.messages![5]).toEqual({ role: 'user', content: 'NOW' });
-    expect(cap.messages!.slice(0, 5).map((m: any) => m.content)).toEqual(['m5', 'm6', 'm7', 'm8', 'm9']);
+    expect(cap.messages).toHaveLength(11);
+    expect(cap.messages![10]).toEqual({ role: 'user', content: 'NOW' });
+    expect(cap.messages!.slice(0, 10).map((m: any) => m.content)).toEqual(['m0','m1','m2','m3','m4','m5','m6','m7','m8','m9']);
   });
 });
