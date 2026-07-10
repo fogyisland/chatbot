@@ -119,6 +119,108 @@ describe('ConversationService.loadHistory', () => {
     expect(warnMock).toHaveBeenCalledTimes(1);
     expect(String(warnMock.mock.calls[0][0])).toContain('history load failed');
   });
+
+  it('walker breaks at /forget boundary marker (boundary at i=0 returns empty)', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    const t2 = new Date('2026-07-04T10:20:00Z');
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'system', content: '__forget_boundary__', created_at: t0 }),
+      baseRow({ role: 'assistant', content: 'c', created_at: t1 }),
+      baseRow({ role: 'user', content: 'b', created_at: t2 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
+    expect(out).toEqual([]);
+  });
+
+  it('walker breaks at /forget boundary marker (boundary mid-history returns rows before it)', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    const t2 = new Date('2026-07-04T10:20:00Z');
+    const t3 = new Date('2026-07-04T10:00:00Z');
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'user', content: 'recent', created_at: t0 }),
+      baseRow({ role: 'assistant', content: 'mid', created_at: t1 }),
+      baseRow({ role: 'system', content: '__forget_boundary__', created_at: t2 }),
+      baseRow({ role: 'user', content: 'old', created_at: t3 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
+    expect(out).toEqual([
+      { role: 'assistant', content: 'mid' },
+      { role: 'user', content: 'recent' },
+    ]);
+  });
+
+  it('walker does NOT break at non-marker system rows (e.g. future system-role rows)', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    const t2 = new Date('2026-07-04T10:20:00Z');
+    // A system row with different content should not be treated as a boundary.
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'user', content: 'recent', created_at: t0 }),
+      baseRow({ role: 'system', content: 'some-other-system-message', created_at: t1 }),
+      baseRow({ role: 'assistant', content: 'old', created_at: t2 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
+    expect(out).toEqual([
+      { role: 'assistant', content: 'old' },
+      { role: 'system', content: 'some-other-system-message' },
+      { role: 'user', content: 'recent' },
+    ]);
+  });
+
+  it('walker does NOT break at user rows that happen to contain the marker content', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    // Defense-in-depth: boundary check is role=system AND content=marker.
+    // A user row that happens to contain the marker text must not trigger a break.
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'user', content: '__forget_boundary__', created_at: t0 }),
+      baseRow({ role: 'assistant', content: 'a', created_at: t1 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
+    expect(out).toEqual([
+      { role: 'assistant', content: 'a' },
+      { role: 'user', content: '__forget_boundary__' },
+    ]);
+  });
+
+  it('walker excludes boundary rows from other senders (per-sender isolation)', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    // Sender B's query is filtered to sender_id IN ('u_b', 'bot'), so the
+    // boundary row from sender A is never returned in the DESC result set.
+    // The pool stub does not actually filter by sender_id — we emulate by
+    // returning only B's rows.
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'user', content: 'b-q', created_at: t0 }),
+      baseRow({ role: 'assistant', content: 'b-a', created_at: t1 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u_b', NOW);
+    expect(out).toEqual([
+      { role: 'assistant', content: 'b-a' },
+      { role: 'user', content: 'b-q' },
+    ]);
+  });
+
+  it('walker ignores a stale boundary: a 2-hour-old boundary row is still a break point', async () => {
+    const t0 = new Date('2026-07-04T10:25:00Z');
+    const t1 = new Date('2026-07-04T10:24:00Z');
+    const t2 = new Date('2026-07-04T08:24:00Z');  // 2 hours before t1 — very stale
+    const { svc } = makeService(async () => [[
+      baseRow({ role: 'user', content: 'newest', created_at: t0 }),
+      baseRow({ role: 'assistant', content: 'after-boundary', created_at: t1 }),
+      baseRow({ role: 'system', content: '__forget_boundary__', created_at: t2 }),
+    ]]);
+    const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
+    // Boundary check fires at i=2 regardless of staleness. A 2-hour-old
+    // boundary is still an absolute break point — the boundary check
+    // supersedes both the 30-min gap check and the per-row timestamp.
+    expect(out).toEqual([
+      { role: 'assistant', content: 'after-boundary' },
+      { role: 'user', content: 'newest' },
+    ]);
+  });
 });
 
 describe('ConversationService DI', () => {

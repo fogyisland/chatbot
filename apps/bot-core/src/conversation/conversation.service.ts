@@ -13,6 +13,7 @@ export class ConversationService {
   private static readonly HISTORY_LIMIT = 10;
   private static readonly FETCH_LIMIT = 20;
   private static readonly SESSION_IDLE_MS = 30 * 60 * 1000;
+  private static readonly BOUNDARY_CONTENT = '__forget_boundary__';
 
   private readonly logger = new Logger(ConversationService.name);
   private pool: Pool | null = null;
@@ -59,6 +60,9 @@ export class ConversationService {
     const surviving: ConversationTurn[] = [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      // Soft /forget boundary: walker stops here. Boundary at i=0 means
+      // the user's most-recent activity is a forget → empty history.
+      if (row.role === 'system' && row.content === ConversationService.BOUNDARY_CONTENT) break;
       const ts = new Date(row.created_at).getTime();
       if (i === 0) {
         if (ts < now - ConversationService.SESSION_IDLE_MS) break;
