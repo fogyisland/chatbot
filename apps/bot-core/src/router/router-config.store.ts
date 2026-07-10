@@ -9,10 +9,11 @@ import { RouterConfig } from './router.types';
  * whether the rows are present or not.
  */
 const DEFAULT_CONFIG: RouterConfig = {
-  commands: { help: 'help', clear: 'clear', status: 'status' },
+  commands: { help: 'help', clear: 'clear', status: 'status', forget: 'forget' },
   prefixes: { kb: 'kb', tool: 'tool', ask: 'llm' },
   defaultHandler: 'llm',
   commandOnly: false,
+  forgetReply: 'verbose',
 };
 
 const CACHE_TTL_MS = 60_000;

@@ -9,10 +9,11 @@ export interface RouteContext {
 }
 
 export interface RouterConfig {
-  commands: Record<string, 'help' | 'clear' | 'status'>;
+  commands: Record<string, 'help' | 'clear' | 'status' | 'forget'>;
   prefixes: Record<string, string>;
   defaultHandler: 'llm' | 'kb' | 'tool';
   commandOnly: boolean;
+  forgetReply: 'verbose' | 'silent';
 }
 
 export { RouteDecision };

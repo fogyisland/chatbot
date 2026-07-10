@@ -5,10 +5,11 @@ import { RouteContext, RouterConfig } from './router.types';
 import { RouterConfigStore } from './router-config.store';
 
 const DEFAULT_CONFIG: RouterConfig = {
-  commands: { help: 'help', clear: 'clear', status: 'status' },
+  commands: { help: 'help', clear: 'clear', status: 'status', forget: 'forget' },
   prefixes: { kb: 'kb', tool: 'tool', ask: 'llm' },
   defaultHandler: 'llm',
   commandOnly: false,
+  forgetReply: 'verbose',
 };
 
 type ConfigSource = RouterConfigStore | RouterConfig | { getConfig: () => Promise<RouterConfig> };
@@ -34,6 +35,11 @@ export class RouterService {
   /** Test-only: force re-load on next route(). */
   invalidate(): void {
     this.cache = null;
+  }
+
+  /** Returns the current (cached) RouterConfig. Used by MessageProcessor to read forgetReply. */
+  async getConfig(): Promise<RouterConfig> {
+    return this.loadConfig();
   }
 
   async route(msg: NormalizedMessage, _ctx: RouteContext): Promise<RouteDecision> {

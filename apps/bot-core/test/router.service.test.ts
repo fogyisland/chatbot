@@ -10,16 +10,23 @@ const ctx = { userId: 'u', chatId: 'c', platform: 'wechat' as const, history: []
 
 describe('RouterService', () => {
   const svc = new RouterService({
-    commands: { help: 'help', clear: 'clear', status: 'status' },
+    commands: { help: 'help', clear: 'clear', status: 'status', forget: 'forget' },
     prefixes: { kb: 'kb', tool: 'tool', ask: 'llm' },
     defaultHandler: 'llm',
     commandOnly: false,
+    forgetReply: 'verbose',
   });
 
   it('routes /help to command handler', async () => {
     const d = await svc.route(baseMsg('/help'), ctx);
     expect(d.kind).toBe('command');
     if (d.kind === 'command') expect(d.handler).toBe('help');
+  });
+
+  it('routes /forget to command handler with handler=forget', async () => {
+    const d = await svc.route(baseMsg('/forget'), ctx);
+    expect(d.kind).toBe('command');
+    if (d.kind === 'command') expect(d.handler).toBe('forget');
   });
 
   it('routes "kb: 报销" to kb handler with query', async () => {
@@ -48,6 +55,7 @@ describe('RouterService', () => {
       prefixes: { kb: 'kb' },
       defaultHandler: 'llm',
       commandOnly: true,
+      forgetReply: 'verbose',
     });
     const d = await cmdOnlySvc.route(baseMsg('你好'), ctx);
     expect(d.kind).toBe('unknown');
@@ -63,6 +71,7 @@ describe('RouterService with RouterConfigStore', () => {
         prefixes: { doc: 'kb' },
         defaultHandler: 'llm',
         commandOnly: true,
+        forgetReply: 'verbose',
       })),
     };
     const svc = new RouterService(store);
@@ -102,6 +111,7 @@ describe('RouterService with RouterConfigStore', () => {
         prefixes: { kb: 'kb' },
         defaultHandler: 'llm',
         commandOnly: false,
+        forgetReply: 'verbose',
       })),
     };
     const svc = new RouterService(store);
