@@ -99,6 +99,19 @@ export class MessageProcessor {
       case 'kb': return this.handlers.kb.handle(decision, ctx);
       case 'tool': return this.handlers.tool.handle(decision, ctx);
       case 'command':
+        if (decision.handler === 'forget') {
+          try {
+            await this.messageLog.upsertForgetBoundary(msg);
+          } catch (err) {
+            // Boundary insert failed — fall back to a normal LLM reply so
+            // the user sees SOMETHING rather than a silent failure.
+            this.logger.warn(`upsertForgetBoundary failed; falling back to LLM: ${err instanceof Error ? err.message : String(err)}`);
+            return this.handlers.llm.handle({ kind: 'llm', prompt: msg.text }, ctx);
+          }
+          const cfg = await this.router.getConfig();
+          const mode = cfg.forgetReply ?? 'verbose';
+          return { text: mode === 'silent' ? '' : '会话已重置, 请问有什么可以帮你?' };
+        }
         return { text: `命令 ${decision.handler} 收到,参数:${decision.args || '(无)'} (MVP 占位)` };
       case 'unknown':
         return { text: `无法理解:${decision.reason}` };

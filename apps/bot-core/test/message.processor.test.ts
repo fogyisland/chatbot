@@ -17,7 +17,7 @@ const baseMsg = (over: Partial<NormalizedMessage> = {}): NormalizedMessage => ({
 });
 
 describe('MessageProcessor', () => {
-  const noLog = { upsertUser: async () => {}, upsertAssistant: async () => {}, close: async () => {} } as any;
+  const noLog = { upsertUser: async () => {}, upsertAssistant: async () => {}, upsertForgetBoundary: async () => {}, close: async () => {} } as any;
   const noConversation = { loadHistory: async () => [] } as any;
 
   function makeAdapters(platform: 'wechat' | 'teams' | 'dingtalk') {
@@ -181,5 +181,48 @@ describe('MessageProcessor', () => {
     expect(result.reply.text).toBe('reply');          // worker still completes
     expect(routerHistory).toEqual([]);                  // router sees empty history
     expect(llmHistory).toEqual([]);                     // handler sees empty history
+  });
+
+  it('handles /forget verbosely: calls upsertForgetBoundary and returns confirmation text', async () => {
+    const { map } = makeAdapters('wechat');
+    let forgetCall: NormalizedMessage | undefined;
+    const messageLog = {
+      upsertUser: async () => {},
+      upsertAssistant: async () => {},
+      upsertForgetBoundary: async (m: NormalizedMessage) => { forgetCall = m; },
+      close: async () => {},
+    };
+    const router = {
+      route: async () => ({ kind: 'command' as const, handler: 'forget' as const, args: '' }),
+      getConfig: async () => ({ commands: {}, prefixes: {}, defaultHandler: 'llm' as const, commandOnly: false, forgetReply: 'verbose' as const }),
+    };
+    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation);
+
+    const result = await proc.process(baseMsg({ msgId: 'fg1', text: '/forget' }));
+    expect(result.reply.text).toBe('会话已重置, 请问有什么可以帮你?');
+    expect(result.sent).toBe(true);
+    expect(forgetCall).toBeDefined();
+    expect(forgetCall?.msgId).toBe('fg1');
+    expect(forgetCall?.senderId).toBe('u1');
+  });
+
+  it('handles /forget silently when forgetReply=silent: empty reply but still logs boundary', async () => {
+    const { map } = makeAdapters('wechat');
+    let forgetCalls = 0;
+    const messageLog = {
+      upsertUser: async () => {},
+      upsertAssistant: async () => {},
+      upsertForgetBoundary: async () => { forgetCalls++; },
+      close: async () => {},
+    };
+    const router = {
+      route: async () => ({ kind: 'command' as const, handler: 'forget' as const, args: '' }),
+      getConfig: async () => ({ commands: {}, prefixes: {}, defaultHandler: 'llm' as const, commandOnly: false, forgetReply: 'silent' as const }),
+    };
+    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation);
+
+    const result = await proc.process(baseMsg({ msgId: 'fg2', text: '/forget' }));
+    expect(result.reply.text).toBe('');
+    expect(forgetCalls).toBe(1);  // boundary still inserted even when silent
   });
 });
