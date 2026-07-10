@@ -1,15 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { Pool, RowDataPacket } from 'mysql2/promise';
+import { Injectable, Logger } from '@nestjs/common';
+import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
 import { PlatformName } from '@mpcb/shared';
+import { ConfigService } from '../common/config/config.service';
 
 export interface ConversationTurn {
   role: 'user' | 'assistant' | 'system';
   content: string;
-}
-
-export interface ConversationLogger {
-  warn: (msg: string) => void;
-  error: (msg: string) => void;
 }
 
 @Injectable()
@@ -18,10 +14,24 @@ export class ConversationService {
   private static readonly FETCH_LIMIT = 20;
   private static readonly SESSION_IDLE_MS = 30 * 60 * 1000;
 
-  constructor(
-    private readonly pool: Pool,
-    @Inject('LOGGER') private readonly logger: ConversationLogger,
-  ) {}
+  private readonly logger = new Logger(ConversationService.name);
+  private pool: Pool | null = null;
+
+  constructor(private readonly cfg: ConfigService) {}
+
+  private getPool(): Pool {
+    if (!this.pool) {
+      this.pool = createPool({
+        host: this.cfg.mysqlHost,
+        port: this.cfg.mysqlPort,
+        user: this.cfg.mysqlUser,
+        password: this.cfg.mysqlPassword,
+        database: this.cfg.mysqlDatabase,
+        connectionLimit: 5,
+      });
+    }
+    return this.pool;
+  }
 
   async loadHistory(
     platform: PlatformName,
@@ -31,7 +41,7 @@ export class ConversationService {
   ): Promise<ConversationTurn[]> {
     let rows: Array<{ role: 'user' | 'assistant' | 'system'; content: string; created_at: Date }>;
     try {
-      const [result] = await this.pool.query<RowDataPacket[]>(
+      const [result] = await this.getPool().query<RowDataPacket[]>(
         `SELECT role, content, created_at FROM messages
          WHERE platform = ? AND chat_id = ? AND sender_id IN (?, ?)
          ORDER BY created_at DESC

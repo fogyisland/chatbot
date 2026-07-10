@@ -1,4 +1,21 @@
 import { ConversationService } from '../src/conversation/conversation.service';
+import { ConfigService } from '../src/common/config/config.service';
+
+// Minimal ConfigService stub providing only the fields getPool() reads.
+function makeConfigStub(): ConfigService {
+  return {
+    mysqlHost: 'localhost',
+    mysqlPort: 3306,
+    mysqlUser: 'mpcb',
+    mysqlPassword: 'mpcb_pw',
+    mysqlDatabase: 'mpcb',
+  } as unknown as ConfigService;
+}
+
+// Inject a pool so the service never calls real MySQL during unit tests.
+function injectPool(svc: ConversationService, pool: any): void {
+  (svc as unknown as { pool: any }).pool = pool;
+}
 
 function makeService(impl: (sql: string, params: unknown[]) => Promise<unknown>) {
   const queries: Array<{ sql: string; params: unknown[] }> = [];
@@ -8,9 +25,15 @@ function makeService(impl: (sql: string, params: unknown[]) => Promise<unknown>)
       return impl(sql, params);
     },
   };
-  const logger: any = { warn: jest.fn(), error: jest.fn() };
-  const svc = new ConversationService(pool, logger);
-  return { svc, queries, logger };
+  const svc = new ConversationService(makeConfigStub());
+  injectPool(svc, pool);
+  // Capture warn() calls on the private logger so the MySQL-throw test stays valid.
+  const warnMock = jest.fn();
+  (svc as unknown as { logger: { warn: jest.Mock; error: jest.Mock } }).logger = {
+    warn: warnMock,
+    error: jest.fn(),
+  };
+  return { svc, queries, warnMock };
 }
 
 const baseRow = (over: Partial<{ role: string; content: string; created_at: Date }> = {}) => ({
@@ -53,8 +76,6 @@ describe('ConversationService.loadHistory', () => {
   });
 
   it('breaks window at first turn older than 30min from its newer neighbor', async () => {
-    // Walk DESC: newest is at t=10:25 (5min ago), then t=10:10 (15min from t=10:25),
-    // then t=09:30 (40min from t=10:10) — break here.
     const t0 = new Date('2026-07-04T10:25:00Z');
     const t1 = new Date('2026-07-04T10:10:00Z');
     const t2 = new Date('2026-07-04T09:30:00Z');
@@ -71,7 +92,7 @@ describe('ConversationService.loadHistory', () => {
   });
 
   it('returns empty when most-recent row is older than 30min', async () => {
-    const t0 = new Date('2026-07-04T09:30:00Z'); // 60min ago
+    const t0 = new Date('2026-07-04T09:30:00Z');
     const { svc } = makeService(async () => [[
       baseRow({ created_at: t0 }),
     ]]);
@@ -80,11 +101,9 @@ describe('ConversationService.loadHistory', () => {
   });
 
   it('caps at HISTORY_LIMIT=10 turns', async () => {
-    // 15 rows all within window. Expect 10.
     const rows = Array.from({ length: 15 }, (_, i) =>
       baseRow({ role: i % 2 === 0 ? 'user' : 'assistant', content: `m${i}`, created_at: new Date(NOW - (15 - i) * 60_000) }),
     );
-    // ASC for clarity (DESC reordering is tested above); the service expects DESC input
     rows.reverse();
     const { svc } = makeService(async () => [rows]);
     const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
@@ -93,10 +112,10 @@ describe('ConversationService.loadHistory', () => {
   });
 
   it('returns empty array and logs warn when MySQL throws', async () => {
-    const { svc, logger } = makeService(async () => { throw new Error('db down'); });
+    const { svc, warnMock } = makeService(async () => { throw new Error('db down'); });
     const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
     expect(out).toEqual([]);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(String(logger.warn.mock.calls[0][0])).toContain('history load failed');
+    expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(String(warnMock.mock.calls[0][0])).toContain('history load failed');
   });
 });
