@@ -15,7 +15,7 @@ Add **multi-turn conversation context** to the v0.1.1 chatbot so that the LLM ha
 ### Goals
 
 - A user can hold a multi-turn conversation with the bot within a single session and have the bot reference earlier turns.
-- Sessions are scoped per `(platform, chat_id, user_id)` — different users in the same chat get independent contexts.
+- Sessions are scoped per `(platform, chat_id, sender_id)` — different users in the same chat get independent contexts.
 - Conversation history is durable across restarts and worker crashes.
 - Multi-turn behavior degrades gracefully: any storage failure reverts to single-turn without breaking the bot.
 - No regression in KB / Tool handler paths — they remain single-turn.
@@ -38,7 +38,7 @@ Add **multi-turn conversation context** to the v0.1.1 chatbot so that the LLM ha
 
 | Dimension | Choice |
 |---|---|
-| Session ID | `(platform, chat_id, user_id)` |
+| Session ID | `(platform, chat_id, sender_id)` |
 | Storage | MySQL — existing `messages` table (no schema change) |
 | Context window | Last N=10 user/assistant turns |
 | Session boundary | 30 minutes of inactivity → new session |
@@ -52,10 +52,10 @@ The `messages` table is already populated by `MessageLogService` (per v0.1.1 fix
 Schema unchanged:
 
 ```
-messages(id, platform, chat_id, user_id, role, content, msg_id, created_at, ...)
+messages(id, platform, chat_id, sender_id, role, content, msg_id, created_at, ...)
 ```
 
-For session-context queries we only need: `platform`, `chat_id`, `user_id`, `role`, `content`, `created_at`.
+For session-context queries we only need: `platform`, `chat_id`, `sender_id`, `role`, `content`, `created_at`.
 
 ### 2.3 Module Structure
 
@@ -107,7 +107,7 @@ The system prompt (if any) and KB context (if any) are appended by the existing 
 
 `ConversationService.loadHistory(platform, chatId, userId, now)`:
 
-1. `SELECT role, content, created_at FROM messages WHERE platform=? AND chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT <fetchLimit>` (default `fetchLimit = 20`, i.e. 2× N).
+1. `SELECT role, content, created_at FROM messages WHERE platform=? AND chat_id=? AND sender_id IN (?, ?) ORDER BY created_at DESC LIMIT <fetchLimit>` (default `fetchLimit = 20`, i.e. 2× N).
 2. Walk results from newest to oldest. Track the most recent `created_at`. Continue while `current.created_at >= previous.created_at - 30min`. Stop at the first turn that breaks the window.
 3. Reverse the surviving slice to time-ascending order and return.
 
@@ -154,9 +154,9 @@ export class ConversationService {
     try {
       const [result] = await this.pool.query<RowDataPacket[]>(
         `SELECT role, content, created_at FROM messages
-         WHERE platform = ? AND chat_id = ? AND user_id = ?
+         WHERE platform = ? AND chat_id = ? AND sender_id IN (?, ?)
          ORDER BY created_at DESC LIMIT ?`,
-        [key.platform, key.chatId, key.userId, this.FETCH_LIMIT],
+        [key.platform, key.chatId, key.userId, 'bot', this.FETCH_LIMIT],
       );
       rows = result;
     } catch (err) {
@@ -260,7 +260,7 @@ export interface HandlerContext {
 | Token overflow | N=10 × ~200 字 ≈ 2k tokens. Plus system + KB + user ≈ <5k for most models | Acceptable for v0.2; can add token-cap later. |
 | KB handler invocation | `ctx.conversationHistory` ignored | No behavior change vs v0.1.1. |
 | Tool handler invocation | Same as KB | No behavior change. |
-| `msg.userId` empty (shouldn't happen — adapters always set it) | Query returns `[]` for empty user_id — same as no-history | Defensive: loadHistory accepts empty userId. |
+| `msg.userId` empty (shouldn't happen — adapters always set it) | Query returns `[]` for empty sender_id — same as no-history | Defensive: loadHistory accepts empty userId. |
 
 ---
 
