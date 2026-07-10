@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.0 — 2026-07-04
+
+Multi-turn conversation context for the LLM handler.
+
+- New `ConversationService` reads `(platform, chat_id, sender_id)` rows from the `messages` table, applies a 30-minute sliding-window filter, and returns the last 10 turns in ascending order.
+- `MessageProcessor` calls `loadHistory` before dispatch and populates `ctx.history` for both the router and the handler.
+- LLM handler now sees prior turns within an active session and can reference earlier messages.
+- KB and Tool handlers unchanged (no behavior change vs v0.1.1).
+- MySQL-down / load-failure: degrades to empty history (single-turn behavior), warning logged.
+- Sessions: `(platform, chat_id, sender_id)` — different users in the same group get independent contexts.
+- Cross-session: after 30 minutes of inactivity, the bot starts fresh (intentional).
+
+Tests: 100/100 across 29 suites (was 89/89 in v0.1.1; +11).
+
 ## v0.1.1 — 2026-07-04
 
 Post-review fixes over v0.1.0.
