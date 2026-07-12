@@ -102,15 +102,16 @@ describe('ConversationService.loadHistory', () => {
     expect(out).toEqual([]);
   });
 
-  it('caps at HISTORY_LIMIT=10 turns', async () => {
+  it('returns all in-window turns (up to FETCH_LIMIT) when no tokenBudget is given', async () => {
     const rows = Array.from({ length: 15 }, (_, i) =>
       baseRow({ role: i % 2 === 0 ? 'user' : 'assistant', content: `m${i}`, created_at: new Date(NOW - (15 - i) * 60_000) }),
     );
     rows.reverse();
     const { svc } = makeService(async () => [rows]);
     const out = await svc.loadHistory('wechat', 'c1', 'u1', NOW);
-    expect(out).toHaveLength(10);
-    expect(out[0]).toEqual({ role: expect.stringMatching(/user|assistant/), content: expect.any(String) });
+    expect(out).toHaveLength(15);
+    expect(out[0].content).toBe('m0');
+    expect(out[14].content).toBe('m14');
   });
 
   it('returns empty array and logs warn when MySQL throws', async () => {

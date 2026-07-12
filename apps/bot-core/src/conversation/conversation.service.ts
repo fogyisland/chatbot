@@ -14,7 +14,6 @@ export interface LoadHistoryOptions {
 
 @Injectable()
 export class ConversationService {
-  private static readonly HISTORY_LIMIT = 10;
   private static readonly FETCH_LIMIT = 20;
   private static readonly SESSION_IDLE_MS = 30 * 60 * 1000;
   private static readonly BOUNDARY_CONTENT = '__forget_boundary__';
@@ -76,7 +75,6 @@ export class ConversationService {
         if (ts < prevTs - ConversationService.SESSION_IDLE_MS) break;
       }
       surviving.push({ role: row.role, content: row.content });
-      if (surviving.length >= ConversationService.HISTORY_LIMIT) break;
     }
 
     surviving.reverse();
