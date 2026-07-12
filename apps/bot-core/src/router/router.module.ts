@@ -4,7 +4,14 @@ import { RouterConfigStore } from './router-config.store';
 
 @Global()
 @Module({
-  providers: [RouterConfigStore, RouterService],
+  providers: [
+    RouterConfigStore,
+    {
+      provide: RouterService,
+      inject: [RouterConfigStore],
+      useFactory: (store: RouterConfigStore) => new RouterService(store),
+    },
+  ],
   exports: [RouterService, RouterConfigStore],
 })
 export class RouterModule {}
