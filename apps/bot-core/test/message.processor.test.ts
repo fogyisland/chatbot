@@ -19,7 +19,7 @@ const baseMsg = (over: Partial<NormalizedMessage> = {}): NormalizedMessage => ({
 describe('MessageProcessor', () => {
   const noLog = { upsertUser: async () => {}, upsertAssistant: async () => {}, upsertForgetBoundary: async () => {}, close: async () => {} } as any;
   const noConversation = { loadHistory: async () => [] } as any;
-  const noConfig = { historyTokenBudget: 0 } as any;
+  const noConfig = { historyTokenBudget: 0, historyBudgetRatio: 0.5 } as any;
 
   function makeAdapters(platform: 'wechat' | 'teams' | 'dingtalk') {
     const adapter: Partial<PlatformAdapter> = {
@@ -130,7 +130,7 @@ describe('MessageProcessor', () => {
     await proc.process(baseMsg({ msgId: 'm7' }));
     expect(routerSignal).toBeDefined();
     expect(llmSignal).toBeDefined();
-    expect(routerSignal).toBe(llmSignal); // same signal instance
+    expect(routerSignal).toBe(llmSignal);
     expect(routerSignal!.aborted).toBe(false);
   });
 
@@ -179,9 +179,9 @@ describe('MessageProcessor', () => {
     };
     const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, noConfig);
     const result = await proc.process(baseMsg({ msgId: 'mh2' }));
-    expect(result.reply.text).toBe('reply');          // worker still completes
-    expect(routerHistory).toEqual([]);                  // router sees empty history
-    expect(llmHistory).toEqual([]);                     // handler sees empty history
+    expect(result.reply.text).toBe('reply');
+    expect(routerHistory).toEqual([]);
+    expect(llmHistory).toEqual([]);
   });
 
   it('handles /forget verbosely: calls upsertForgetBoundary and returns confirmation text', async () => {
@@ -224,30 +224,85 @@ describe('MessageProcessor', () => {
 
     const result = await proc.process(baseMsg({ msgId: 'fg2', text: '/forget' }));
     expect(result.reply.text).toBe('');
-    expect(forgetCalls).toBe(1);  // boundary still inserted even when silent
+    expect(forgetCalls).toBe(1);
   });
 
-  it('passes tokenBudget from ConfigService to conversationService.loadHistory', async () => {
+  it('computeHistoryBudget: explicit cap (4321) beats perModel on long-context (200k * 0.5 = 100k)', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
-    const llm = { handle: async () => ({ text: 'reply' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_000 };
     const loadHistoryMock = jest.fn(async () => []);
-    const conversation = { loadHistory: loadHistoryMock };
-    const cfg = { historyTokenBudget: 4321 } as any;
-
+    const cfg = { historyTokenBudget: 4321, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
     );
+    await proc.process(baseMsg({ msgId: 'budget1' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4321 });
+  });
 
-    await proc.process(baseMsg({ msgId: 'm-budget', platform: 'wechat' }));
+  it('computeHistoryBudget: perModel (4000) beats explicit (6000) on Tongyi-class 8k context', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 8_000 };
+    const loadHistoryMock = jest.fn(async () => []);
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+    );
+    await proc.process(baseMsg({ msgId: 'budget2' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4000 });
+  });
 
-    expect(loadHistoryMock).toHaveBeenCalledTimes(1);
-    const call = loadHistoryMock.mock.calls[0] as any[];
-    expect(call[0]).toBe('wechat');          // platform
-    expect(call[1]).toBe('c1');              // chatId
-    expect(call[2]).toBe('u1');              // senderId
-    expect(typeof call[3]).toBe('number');   // now
-    expect(call[4]).toEqual({ tokenBudget: 4321 });
+  it('computeHistoryBudget: explicit=0 falls back to perModel (64k on 128k model, ratio 0.5)', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 128_000 };
+    const loadHistoryMock = jest.fn(async () => []);
+    const cfg = { historyTokenBudget: 0, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+    );
+    await proc.process(baseMsg({ msgId: 'budget3' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 64_000 });
+  });
+
+  it('computeHistoryBudget: ratio=0 disables perModel (effective = min(explicit, 0) = 0)', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_000 };
+    const loadHistoryMock = jest.fn(async () => []);
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+    );
+    await proc.process(baseMsg({ msgId: 'budget4' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
+  });
+
+  it('computeHistoryBudget: empty FallbackProvider chain (ctxWindow=0) yields 0 even with explicit cap', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 0 };
+    const loadHistoryMock = jest.fn(async () => []);
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+    );
+    await proc.process(baseMsg({ msgId: 'budget5' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
+  });
+
+  it('computeHistoryBudget: Math.floor applied (200001 * 0.5 = 100000.5 → 100000)', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_001 };
+    const loadHistoryMock = jest.fn(async () => []);
+    const cfg = { historyTokenBudget: 0, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+    );
+    await proc.process(baseMsg({ msgId: 'budget6' }));
+    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 100_000 });
   });
 
   it('falls back to empty history when loadHistory throws (no tokenBudget leak)', async () => {
@@ -255,7 +310,7 @@ describe('MessageProcessor', () => {
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'fallback' }) };
     const conversation = { loadHistory: async () => { throw new Error('mysql down'); } };
-    const cfg = { historyTokenBudget: 6000 } as any;
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 } as any;
 
     const proc = new MessageProcessor(
       map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg,

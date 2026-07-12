@@ -41,7 +41,7 @@ export class MessageProcessor {
         msg.chatId,
         msg.senderId,
         Date.now(),
-        { tokenBudget: this.config.historyTokenBudget },
+        { tokenBudget: this.computeHistoryBudget() },
       );
     } catch (err) {
       this.logger.warn(`loadHistory threw; degrading to empty history: ${err instanceof Error ? err.message : String(err)}`);
@@ -119,5 +119,26 @@ export class MessageProcessor {
       case 'unknown':
         return { text: `无法理解:${decision.reason}` };
     }
+  }
+
+  /**
+   * Compute the effective per-message token budget for conversation history.
+   *
+   *   contextWindow  = handlers.llm.contextWindow         (e.g. 200_000 for Claude)
+   *   ratio          = cfg.historyBudgetRatio             (env, default 0.5)
+   *   explicit       = cfg.historyTokenBudget             (v0.4 env, 0 = unset)
+   *
+   *   perModel = Math.floor(contextWindow * ratio)
+   *   effective = explicit > 0 ? Math.min(explicit, perModel) : perModel
+   *
+   * Reads three getters from already-injected dependencies; no caching,
+   * no DB lookup, no router_config read. Called once per process() call.
+   */
+  private computeHistoryBudget(): number {
+    const contextWindow = this.handlers.llm.contextWindow;
+    const ratio = this.config.historyBudgetRatio;
+    const explicit = this.config.historyTokenBudget;
+    const perModel = Math.floor(contextWindow * ratio);
+    return explicit > 0 ? Math.min(explicit, perModel) : perModel;
   }
 }
