@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.0 — 2026-07-12
+
+Token-budget-aware truncation for conversation history. The hard 10-turn cap from v0.2 is replaced by a configurable token budget, so long CJK conversations can keep more context within budget while short ASCII conversations trim aggressively to fit. Token budget is the sole cap; the old 10-turn backstop is removed.
+
+**New APIs:**
+- `ConversationService.loadHistory(platform, chatId, senderId, now, options?)` gains optional 5th arg `{ tokenBudget?: number }`. When set, drops oldest whole turns (FIFO) until total estimated tokens ≤ budget. Always keeps the most recent turn. Pass `0` or omit to disable trimming (backwards-compatible with all existing callers).
+- New shared utility `estimateTokens(text)` in `@mpcb/shared` — CJK-aware heuristic (CJK / Hiragana / Katakana / Hangul characters = 1 token each; ASCII = `Math.ceil(chars / 4)`).
+- `ConfigService.historyTokenBudget` getter reads env var `HISTORY_TOKEN_BUDGET` (default `6000`). `MessageProcessor` reads it and passes to `loadHistory` on every call.
+- `LlmProvider` interface gains `readonly contextWindow: number`. Per-provider values: Claude = `200_000`, OpenAI = `128_000`, Tongyi = `8_000`, DeepSeek = `32_000`. `FallbackProvider.contextWindow` = chain head's value (or `0` if chain is empty). The knob ships in a later release — v0.4 lays the foundation only.
+
+**Bug fix (CJK undercounting):**
+- `LlmProvider.countTokens` now delegates to the shared `estimateTokens`, replacing the per-provider ASCII-only heuristic that undercounted CJK content. All 5 providers (`Claude`, `OpenAI`, `Tongyi`, `DeepSeek`, `Fallback`) updated.
+
+**Refactor:**
+- `MessageProcessor` constructor grows from 5 → 6 args (added `ConfigService`). `WorkerModule.onModuleInit` updated accordingly. 14 call sites audited and verified.
+- `HISTORY_LIMIT = 10` removed; token budget supersedes.
+
+**Backwards-compatible:** `loadHistory`'s `options` arg is optional; existing 4-arg callers and tests keep working without modification.
+
+Tests: 145/145 across 33 suites (was 115 in v0.3.1; +30: 8 `estimateTokens`, 5 `ConfigService.historyTokenBudget`, 2 `FallbackProvider.contextWindow`, 12 `ConversationService` budget filter, 2 `MessageProcessor` tokenBudget propagation, 1 MessageProcessor DI-shape canary). `pnpm build` green. `pnpm -r lint` green.
+
 ## v0.3.1 — 2026-07-12
 
 Post-review fixes over v0.3.0. The v0.3.0 tag pointed at commits that crashed the worker on startup (NestJS could not DI-resolve `RouterService`'s `source` parameter — same class of bug as v0.2.0's `ConversationService` issue). All consumers should use v0.3.1 instead.
