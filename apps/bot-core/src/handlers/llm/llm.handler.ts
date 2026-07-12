@@ -14,6 +14,15 @@ export class LlmHandler implements Handler {
     private readonly usage: UsageLogger,
   ) {}
 
+  /**
+   * Max tokens the underlying provider accepts. Falls back through
+   * FallbackProvider to the chain head. Returns 0 if the chain is empty
+   * (degenerate case — v0.4 precedent).
+   */
+  get contextWindow(): number {
+    return this.provider.contextWindow;
+  }
+
   async handle(input: RouteDecision & { kind: 'llm' }, ctx: HandlerContext): Promise<NormalizedReply> {
     const req: ChatRequest = {
       model: this.provider.defaultModel,
