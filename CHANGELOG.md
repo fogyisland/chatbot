@@ -13,7 +13,7 @@ User-initiated conversation reset via `/forget`. Soft boundary: writes a `messag
 - New `RouterService.getConfig()` accessor (uses the existing 60s cache) so the processor can read `forgetReply` per-message without re-fetching.
 - DB error on boundary insert: logged warn + fallback to default LLM handler with the user's original text — user sees a normal reply, forget didn't happen (acceptable degradation).
 
-Tests: 107/107 across 29 suites (was 101/101 in v0.2.1; +6: 6 ConversationService walker, 2 MessageLogService, 2 MessageProcessor, 1 router — actual run by T4 implementer was 107/107). `pnpm build` green. `pnpm -r lint` green.
+Tests: 112/112 across 29 suites (was 101/101 in v0.2.1; +11: 6 ConversationService walker, 2 MessageLogService, 2 MessageProcessor, 1 router). `pnpm build` green. `pnpm -r lint` green.
 
 ## v0.2.1 — 2026-07-10
 
