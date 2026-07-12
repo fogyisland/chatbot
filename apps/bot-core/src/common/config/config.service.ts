@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class ConfigService {
+  private readonly logger = new Logger(ConfigService.name);
+  private static readonly DEFAULT_HISTORY_BUDGET_RATIO = 0.5;
+  private historyBudgetRatioWarned = false;
   get nodeEnv(): string {
     return process.env.NODE_ENV ?? 'development';
   }
@@ -76,5 +79,23 @@ export class ConfigService {
     if (raw === undefined) return 6000;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) && n >= 0 ? n : 6000;
+  }
+
+  get historyBudgetRatio(): number {
+    const raw = process.env.HISTORY_BUDGET_RATIO;
+    if (raw === undefined) return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      if (!this.historyBudgetRatioWarned) {
+        this.historyBudgetRatioWarned = true;
+        this.logger.warn(
+          `HISTORY_BUDGET_RATIO=${JSON.stringify(raw)} invalid; ` +
+          `falling back to ${ConfigService.DEFAULT_HISTORY_BUDGET_RATIO}. ` +
+          `Expected 0 <= ratio <= 1.`,
+        );
+      }
+      return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
+    }
+    return n;
   }
 }
