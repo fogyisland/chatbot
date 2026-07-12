@@ -20,4 +20,23 @@ describe('migrations directory', () => {
       expect(sql).toMatch(new RegExp(`CREATE TABLE.*\\b${t}\\b`, 'i'));
     }
   });
+
+  it('contains 0003_messages_summary_role.sql', () => {
+    const p = path.join(__dirname, '..', 'migrations', '0003_messages_summary_role.sql');
+    expect(fs.existsSync(p)).toBe(true);
+  });
+
+  it('0003 extends messages.role enum with summary', () => {
+    const sql = fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '0003_messages_summary_role.sql'),
+      'utf8',
+    );
+    expect(sql).toMatch(/ALTER TABLE\s+messages\s+MODIFY/i);
+    // Must extend enum to include 'summary'
+    expect(sql).toMatch(/ENUM\([^)]*'summary'[^)]*\)/i);
+    // Must NOT remove the existing values
+    expect(sql).toMatch(/'user'/);
+    expect(sql).toMatch(/'assistant'/);
+    expect(sql).toMatch(/'system'/);
+  });
 });
