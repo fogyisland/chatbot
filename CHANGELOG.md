@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.6.0 — 2026-07-12
+
+Sliding-window summarization for over-budget conversations. v0.5's FIFO drop is replaced by a single summary row per session that captures prior context; full history is never silently lost when the feature is on. Opt-in via `ENABLE_SUMMARIZATION` (default off; v0.5 deployments see zero behavior change).
+
+**New env:**
+- `ENABLE_SUMMARIZATION` (default `false`, boolean). Truthy: `1|true|yes|on`. Anything else → `false`.
+- `SUMMARIZER_PROVIDERS` (default `claude-haiku,openai-mini`, csv). Ordered chain of provider-name strings. Each maps to a registered `LlmProvider` instance in the new `SummarizerModule`.
+- `SUMMARIZER_CONTEXT_WINDOW` (default `100_000` tokens). Cheap-model safe default; controls the pre-trim input cap (`0.7 × contextWindow`).
+
+**New APIs:**
+- `SummarizationService.summarize(turns, signal) → Promise<string>` — builds the small-LLM request (system prompt + transcript), runs pre-trim to 70% of context window, tries each provider in the chain sequentially, records usage per provider.
+- `SummarizationService.contextWindow` getter (parity with `LlmHandler.contextWindow`).
+- `SummarizationUnavailableError extends Error` — typed failure when all chain providers fail. Carries `.cause`. Caller (MessageProcessor) catches + falls back to v0.5 `loadHistory` behavior (logged warn).
+- `ConversationService.loadOrBuildHistory(platform, chatId, senderId, now, options?)` — drop-in replacement for `loadHistory`. `options.enableSummarization: boolean` gates the new path; `loadHistory` remains the underlying engine.
+- `ConversationTurn.role` widens from `'user' | 'assistant' | 'system'` to add `'summary'`. `LlmHandler` renders `role:'summary'` → `role:'user'` with `[Earlier conversation summary]\n…` prefix at the call site (Claude/OpenAI accept only user/assistant).
+- `MessageLogService.upsertSummary(content, platform, chatId, senderId): Promise<void>` — idempotent INSERT/UPDATE on `msg_id = summary-<sha1(sessionKey)>[0:16]>`. Subsequent summarize events UPDATE the same row (incremental merge).
+- `ClaudeHaikuProvider extends ClaudeProvider` — overrides `name='claude-haiku'`, `defaultModel='claude-haiku-4-5'`. Reuses Claude API calling logic.
+- `OpenAIMiniProvider extends OpenAIProvider` — overrides `name='openai-mini'`, `defaultModel='gpt-4o-mini'`.
+
+**New behavior:**
+- When `ENABLE_SUMMARIZATION=true` and `loadHistory`'s surviving turns still exceed `tokenBudget`:
+  1. Pre-trim oldest turns to ≤70% of `summarizerContextWindow`.
+  2. Build small-LLM request (system prompt + prior summary as merge context + new oldest turns).
+  3. Call summarizer chain head; record usage per provider. Fall through the chain on per-provider failure.
+  4. On full-chain failure → `SummarizationUnavailableError` → caller falls back to v0.5 `loadHistory` path (logged warn). Doubly-fail-closed final state: empty history.
+  5. Upsert summary row keyed on `summary-<sha1(sessionKey)>` (idempotent on next over-budget event for the same session).
+  6. Return `[{ role: 'summary', content: merged }, ...recent_verbatim_turns]` to the LLM context.
+- `/forget` semantics preserved: boundary walker's `role='system', content='__forget_boundary__'` check still precedes summary rows in DB; a session restart cleanly drops accumulated summaries.
+
+**Schema:**
+- `ALTER TABLE messages MODIFY COLUMN role ENUM('user','assistant','system','summary')` (migration `0003_messages_summary_role.sql`). MySQL 8 INSTANT DDL — non-blocking in production. No data migration needed.
+
+**Constructor change:**
+- `ConversationService` constructor: 1 → 3 args (`cfg, summarizer, messageLog`). First constructor change since v0.4. Locked by new `conversation.di.test.ts` (the `feedback_sdd_review_layering` net). Whole-branch review caught a related cross-module DI bug (`UsageLogger` not in `SummarizerModule` scope); locked by new full-`AppModule` DI canary in `app-module.di.test.ts`.
+
+**Usage log:**
+- One extra row per over-budget event (summarizer's own call). `provider` column carries the actual provider name (`claude-haiku` | `openai-mini`) for cost accounting.
+
+**v0.6 fix wave (post whole-branch review):**
+- 1 Critical: `SummarizationService` factory crashed at startup because `UsageLogger` is owned by `HandlersModule` and `SummarizerModule` did not import it. Fixed by exporting `UsageLogger` from `HandlersModule` and adding `imports: [HandlersModule]` to `SummarizerModule`. Regression net: new full-`AppModule` DI canary (`app-module.di.test.ts`) that refuses to mock `UsageLogger`, forcing the real DI graph to resolve it.
+- 1 Important: `MessageProcessor` was discarding history to `[]` when `loadOrBuildHistory` threw `SummarizationUnavailableError` (spec required fallback to v0.5 `loadHistory`). Fixed with a 2-tier try/catch: `loadOrBuildHistory` → `loadHistory` → `[]`. 2 new regression tests in `message.processor.test.ts` pin the fail-open contract.
+
+Tests: 185/185 across 40 suites (was 160/35 in v0.5.0; +25 net tests, +5 net suites after T5 refactor + T7 mock rename removed ~13 stale tests). 8 new test suites added across v0.6 covering config getters, summarization service + providers, conversation history building, LLM rendering, and the full-`AppModule` DI canary. `pnpm -r build` green. `pnpm -r lint` green. Whole-branch review verdict: **FIXED — ready to tag**.
+
 ## v0.5.0 — 2026-07-12
 
 Per-model conversation-history token budget. v0.4's flat `HISTORY_TOKEN_BUDGET` (default 6000) is replaced by `min(historyTokenBudget, floor(provider.contextWindow × HISTORY_BUDGET_RATIO))`, so long-context models use more of their room by default and short-context models (e.g. Tongyi 8k) are kept honest. v0.4's explicit-cap semantic (`HISTORY_TOKEN_BUDGET` value honored) is preserved — the min wins.
