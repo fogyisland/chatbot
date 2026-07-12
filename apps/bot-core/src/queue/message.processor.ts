@@ -34,6 +34,10 @@ export class MessageProcessor {
     // 30s timeout so a stuck downstream never holds the worker slot forever.
     const abortSignal = AbortSignal.timeout(30_000);
 
+    // v0.6.0 fail-open contract (spec §3.1, §4.3, §5): if loadOrBuildHistory
+    // throws (e.g. SummarizationUnavailableError when the summarizer chain
+    // is dead), fall back to loadHistory so the user gets v0.5 FIFO behavior
+    // instead of strictly worse (empty history).
     let history: ConversationTurn[] = [];
     try {
       history = await this.conversation.loadOrBuildHistory(
@@ -44,8 +48,19 @@ export class MessageProcessor {
         { tokenBudget: this.computeHistoryBudget(), enableSummarization: this.config.enableSummarization },
       );
     } catch (err) {
-      this.logger.warn(`loadHistory threw; degrading to empty history: ${err instanceof Error ? err.message : String(err)}`);
-      history = [];
+      this.logger.warn(`loadOrBuildHistory threw; falling back to loadHistory: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        history = await this.conversation.loadHistory(
+          msg.platform,
+          msg.chatId,
+          msg.senderId,
+          Date.now(),
+          { tokenBudget: this.computeHistoryBudget() },
+        );
+      } catch (err2) {
+        this.logger.warn(`loadHistory fallback also threw; degrading to empty: ${err2 instanceof Error ? err2.message : String(err2)}`);
+        history = [];
+      }
     }
 
     const decision = await this.router.route(msg, {

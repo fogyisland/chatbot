@@ -91,6 +91,12 @@ import { weatherTool } from './tool/builtin/weather.tool';
       },
     },
   ],
-  exports: [HandlerRegistry, LlmHandler, KbHandler, ToolRegistry, FallbackProvider],
+  // v0.6.0: UsageLogger is also exported so SummarizerModule (sibling) can
+  // DI-inject it when constructing SummarizationService. Without this export,
+  // `NestFactory.create(AppModule)` crashes at startup with:
+  //   "Nest can't resolve dependencies of the SummarizationService
+  //    (... UsageLogger at index [1] is not available in the SummarizerModule
+  //    context)" — caught by app-module.di.test.ts whole-branch canary.
+  exports: [HandlerRegistry, LlmHandler, KbHandler, ToolRegistry, FallbackProvider, UsageLogger],
 })
 export class HandlersModule {}

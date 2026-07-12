@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '../../common/config/config.service';
 import { UsageLogger } from '../llm/usage-logger';
+import { HandlersModule } from '../handlers.module';
 import { ClaudeHaikuProvider } from './providers/claude-haiku.provider';
 import { OpenAIMiniProvider } from './providers/openai-mini.provider';
 import { SummarizationService } from './summarizer.service';
@@ -19,6 +20,12 @@ import { LlmProvider } from '../llm/llm.types';
  * Default chain (when env unset): ['claude-haiku', 'openai-mini'].
  */
 @Module({
+  // v0.6.0: import HandlersModule so UsageLogger (exported from there) is
+  // available to SummarizationService's factory. Without this, NestJS
+  // cannot resolve the SummarizationService constructor's 2nd argument
+  // (`usage: UsageLogger`) and AppModule fails to compile. See
+  // app-module.di.test.ts for the whole-branch canary.
+  imports: [HandlersModule],
   providers: [
     {
       provide: ClaudeHaikuProvider,
