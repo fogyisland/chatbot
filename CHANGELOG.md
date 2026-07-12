@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.1 — 2026-07-12
+
+Post-review fixes over v0.3.0. The v0.3.0 tag pointed at commits that crashed the worker on startup (NestJS could not DI-resolve `RouterService`'s `source` parameter — same class of bug as v0.2.0's `ConversationService` issue). All consumers should use v0.3.1 instead.
+
+**Critical fix (production-startup blocker):**
+- `RouterModule` now uses `useFactory: (store) => new RouterService(store)` with `inject: [RouterConfigStore]` to wire `RouterService`. The bare provider declaration `providers: [RouterService]` could not be resolved because the constructor parameter is a union type (`RouterConfigStore | RouterConfig | { getConfig }`). New DI construction test asserts the service constructs via `Test.createTestingModule(...).compile()` (would have failed against v0.3.0 with `Nest can't resolve dependencies of the RouterService`).
+
+**Important fix (config persistence):**
+- `RouterConfigStore.rowsToConfig()` now reads `forget_reply` from the `router_config` MySQL table and maps `{ kind: 'silent' | 'verbose' }` to `cfg.forgetReply`. Previously the value was silently dropped, so admin-set `forget_reply='silent'` had no effect. Deployments wanting silent mode can now achieve it via `UPDATE router_config SET config_value = JSON_OBJECT('kind', 'silent') WHERE config_key = 'forget_reply'`.
+
+Tests: 115/115 across 30 suites (was 112/112 in v0.3.0; +3: 1 RouterModule DI construction, 2 RouterConfigStore forget_reply parsing). `pnpm build` green. `pnpm -r lint` green.
+
+> Note: the v0.3.0 tag remains at the buggy commit `781b11a` for history; DO NOT use it in production. Use `v0.3.1`.
+
 ## v0.3.0 — 2026-07-10
 
 User-initiated conversation reset via `/forget`. Soft boundary: writes a `messages` row with `role='system'`, `content='__forget_boundary__'` keyed by the user's `msg_id` (idempotent). `ConversationService` walker now breaks at boundary markers, so the next user message after `/forget` sees an empty history (fresh conversation).
