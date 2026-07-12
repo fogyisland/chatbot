@@ -3,12 +3,14 @@ import { FallbackProvider } from '../src/handlers/llm/fallback.provider';
 const ok = (name: string, model = 'm') => ({
   name,
   defaultModel: model,
+  contextWindow: 8000,
   chat: async () => ({ text: `${name}-ok`, usage: { promptTokens: 1, completionTokens: 1 }, model }),
   countTokens: () => 1,
 });
 const fail = (name: string, model = 'm') => ({
   name,
   defaultModel: model,
+  contextWindow: 8000,
   chat: async () => { throw new Error(`${name}-down`); },
   countTokens: () => 1,
 });
@@ -56,6 +58,7 @@ describe('FallbackProvider', () => {
     const finalProvider = {
       name: 'openai',
       defaultModel: 'gpt-4o-mini',
+      contextWindow: 128000,
       chat: async (req: any) => {
         lastSeen = req.model;
         return { text: 'final', usage: { promptTokens: 0, completionTokens: 0 }, model: req.model };
@@ -67,5 +70,19 @@ describe('FallbackProvider', () => {
     expect(r.text).toBe('final');
     // Caller-supplied model wins — fallback only changes provider, not model.
     expect(lastSeen).toBe('caller-chosen');
+  });
+
+  it('contextWindow mirrors the first provider in the chain', () => {
+    const fb = new FallbackProvider([
+      ok('tongyi', 'qwen-turbo'),
+      ok('deepseek', 'deepseek-chat'),
+      ok('openai', 'gpt-4o-mini'),
+    ]);
+    expect(fb.contextWindow).toBe(8000);
+  });
+
+  it('contextWindow is 0 when chain is empty (degenerate)', () => {
+    const fb = new FallbackProvider([]);
+    expect(fb.contextWindow).toBe(0);
   });
 });

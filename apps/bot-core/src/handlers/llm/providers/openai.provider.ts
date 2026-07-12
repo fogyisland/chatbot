@@ -1,4 +1,5 @@
 import { ChatRequest, ChatResponse, LlmProvider, ChatMessage } from '../llm.types';
+import { estimateTokens } from '@mpcb/shared';
 
 export interface OpenAIProviderOptions {
   apiKey: string;
@@ -24,16 +25,17 @@ interface OpenAIResponse {
 export class OpenAIProvider implements LlmProvider {
   readonly name = 'openai';
   readonly defaultModel: string;
+  readonly contextWindow: number;
   private readonly baseUrl: string;
 
   constructor(private readonly opts: OpenAIProviderOptions) {
     this.baseUrl = opts.baseUrl ?? 'https://api.openai.com';
     this.defaultModel = opts.defaultModel ?? 'gpt-4o-mini';
+    this.contextWindow = 128_000;
   }
 
   countTokens(text: string): number {
-    // Approximate: ~4 chars per token for English/mixed CJK
-    return Math.ceil(text.length / 4);
+    return estimateTokens(text);
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {

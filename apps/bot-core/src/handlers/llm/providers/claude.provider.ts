@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { estimateTokens } from '@mpcb/shared';
 import { ConfigService } from '../../../common/config/config.service';
 import { ChatRequest, ChatResponse, LlmProvider, ChatMessage } from '../llm.types';
 
@@ -15,13 +16,14 @@ interface ClaudeResponse {
 export class ClaudeProvider implements LlmProvider {
   readonly name = 'claude';
   readonly defaultModel = 'claude-3-5-sonnet-20241022';
+  readonly contextWindow = 200_000;
   private readonly logger = new Logger(ClaudeProvider.name);
   private readonly baseUrl = 'https://api.anthropic.com';
 
   constructor(private readonly config: ConfigService) {}
 
   countTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+    return estimateTokens(text);
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {

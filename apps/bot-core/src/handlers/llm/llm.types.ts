@@ -28,6 +28,7 @@ export interface ChatResponse {
 export interface LlmProvider {
   readonly name: string;
   readonly defaultModel: string;
+  readonly contextWindow: number;
   chat(req: ChatRequest): Promise<ChatResponse>;
   countTokens(text: string): number;
 }

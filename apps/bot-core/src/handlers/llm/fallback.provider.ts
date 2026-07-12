@@ -1,5 +1,6 @@
 import { ChatRequest, ChatResponse, LlmProvider } from './llm.types';
 import { Logger } from '@nestjs/common';
+import { estimateTokens } from '@mpcb/shared';
 
 /**
  * Wraps an ordered chain of LlmProviders. Tries each in order, returning
@@ -14,10 +15,12 @@ import { Logger } from '@nestjs/common';
 export class FallbackProvider implements LlmProvider {
   readonly name = 'fallback';
   readonly defaultModel: string;
+  readonly contextWindow: number;
   private readonly logger = new Logger(FallbackProvider.name);
 
   constructor(private readonly chain: LlmProvider[]) {
     this.defaultModel = chain[0]?.defaultModel ?? '';
+    this.contextWindow = chain[0]?.contextWindow ?? 0;
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
@@ -33,5 +36,7 @@ export class FallbackProvider implements LlmProvider {
     throw lastErr instanceof Error ? lastErr : new Error('all providers failed');
   }
 
-  countTokens(text: string): number { return Math.ceil(text.length / 4); }
+  countTokens(text: string): number {
+    return estimateTokens(text);
+  }
 }
