@@ -109,6 +109,11 @@ export class RouterConfigStore implements OnModuleInit {
     if (commandOnly && typeof commandOnly === 'object') {
       cfg.commandOnly = Boolean((commandOnly as { enabled?: boolean }).enabled);
     }
+    const forgetReply = byKey.get('forget_reply');
+    if (forgetReply && typeof forgetReply === 'object') {
+      const fr = (forgetReply as { kind?: string }).kind;
+      if (fr === 'silent' || fr === 'verbose') cfg.forgetReply = fr;
+    }
     return cfg;
   }
 

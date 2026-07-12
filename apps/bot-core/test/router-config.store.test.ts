@@ -75,4 +75,36 @@ describe('RouterConfigStore', () => {
     await store.getConfig();
     expect(calls).toBe(2);
   });
+
+  it('parses forget_reply=verbose and forget_reply=silent', async () => {
+    // v0.3.0 dropped the forget_reply row entirely. v0.3.1 maps
+    // { kind: 'silent' | 'verbose' } onto cfg.forgetReply so admin-set
+    // silent mode actually takes effect.
+    const poolVerbose = {
+      query: async () => [[
+        { config_key: 'forget_reply', config_value: { kind: 'verbose' }, enabled: 1 },
+      ]],
+    };
+    const storeV = makeStoreWithPool(poolVerbose);
+    expect((await storeV.getConfig()).forgetReply).toBe('verbose');
+
+    const poolSilent = {
+      query: async () => [[
+        { config_key: 'forget_reply', config_value: { kind: 'silent' }, enabled: 1 },
+      ]],
+    };
+    const storeS = makeStoreWithPool(poolSilent);
+    expect((await storeS.getConfig()).forgetReply).toBe('silent');
+  });
+
+  it('ignores forget_reply rows with invalid kind (falls back to default)', async () => {
+    const pool = {
+      query: async () => [[
+        { config_key: 'forget_reply', config_value: { kind: 'something-else' }, enabled: 1 },
+      ]],
+    };
+    const store = makeStoreWithPool(pool);
+    // Unknown kind → leaves cfg.forgetReply at DEFAULT_CONFIG value ('verbose').
+    expect((await store.getConfig()).forgetReply).toBe('verbose');
+  });
 });
