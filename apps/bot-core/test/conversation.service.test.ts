@@ -30,9 +30,10 @@ function makeService(impl: (sql: string, params: unknown[]) => Promise<unknown>)
   injectPool(svc, pool);
   // Capture warn() calls on the private logger so the MySQL-throw test stays valid.
   const warnMock = jest.fn();
-  (svc as unknown as { logger: { warn: jest.Mock; error: jest.Mock } }).logger = {
+  (svc as unknown as { logger: { warn: jest.Mock; error: jest.Mock; debug: jest.Mock } }).logger = {
     warn: warnMock,
     error: jest.fn(),
+    debug: jest.fn(),
   };
   return { svc, queries, warnMock };
 }
@@ -220,6 +221,157 @@ describe('ConversationService.loadHistory', () => {
       { role: 'assistant', content: 'after-boundary' },
       { role: 'user', content: 'newest' },
     ]);
+  });
+
+  // ── Token-budget filter (v0.4) ────────────────────────────────────────
+
+  describe('loadHistory token-budget filter', () => {
+    const minute = 60_000;
+    const now = Date.now();
+
+    function rowsSpec(specs: Array<{ role: string; content: string; ageMin: number }>) {
+      // Most-recent first (DESC), as the SQL returns them.
+      // The caller passes specs in ASC order (oldest first); we reverse
+      // to produce the DESC rows that real MySQL ORDER BY DESC would return.
+      const rows = specs.map(s => ({
+        role: s.role,
+        content: s.content,
+        created_at: new Date(now - s.ageMin * minute),
+      })).reverse();
+      return rows;
+    }
+
+    it('returns all turns when history is well under budget', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'hi', ageMin: 0 },
+        { role: 'assistant', content: 'hello', ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 100_000 });
+      expect(result).toEqual([
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+      ]);
+    });
+
+    it('drops oldest turns FIFO until total <= budget', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(10), ageMin: 0 },
+        { role: 'assistant', content: 'b'.repeat(10), ageMin: 0 },
+        { role: 'user', content: 'c'.repeat(10), ageMin: 0 },
+        { role: 'assistant', content: 'd'.repeat(10), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 6 });
+      expect(result).toEqual([{ role: 'assistant', content: 'd'.repeat(10) }]);
+    });
+
+    it('keeps newest turn even if it alone exceeds budget', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(100), ageMin: 0 },
+        { role: 'assistant', content: 'b'.repeat(100), ageMin: 0 },
+        { role: 'user', content: 'c'.repeat(10000), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 100 });
+      expect(result.length).toBe(1);
+      expect(result[0].content).toBe('c'.repeat(10000));
+    });
+
+    it('CJK content counts as 1 token per character', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: '你'.repeat(100), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 50 });
+      expect(result.length).toBe(1);
+      const { svc: svc2 } = makeService(async () => [rows]);
+      const result2 = await svc2.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 150 });
+      expect(result2.length).toBe(1);
+    });
+
+    it('mixed CJK + ASCII sums both heuristics', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: '你好hello', ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 3 });
+      expect(result.length).toBe(1);
+      const { svc: svc2 } = makeService(async () => [rows]);
+      const result2 = await svc2.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 4 });
+      expect(result2.length).toBe(1);
+    });
+
+    it('does not trim when options is undefined (backwards compat)', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(1000), ageMin: 0 },
+        { role: 'assistant', content: 'b'.repeat(1000), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now);
+      expect(result.length).toBe(2);
+    });
+
+    it('does not trim when tokenBudget is 0 (opt-out)', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(1000), ageMin: 0 },
+        { role: 'assistant', content: 'b'.repeat(1000), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 0 });
+      expect(result.length).toBe(2);
+    });
+
+    it('does not trim when tokenBudget is negative (defensive)', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(1000), ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: -1 });
+      expect(result.length).toBe(1);
+    });
+
+    it('returns [] for empty history + budget', async () => {
+      const { svc } = makeService(async () => [[]]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 6000 });
+      expect(result).toEqual([]);
+    });
+
+    it('preserves ConversationTurn shape (no tokens field leaked)', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'hello', ageMin: 0 },
+        { role: 'assistant', content: 'world', ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 1 });
+      for (const turn of result) {
+        expect(turn).toEqual({ role: expect.any(String), content: expect.any(String) });
+        expect((turn as any).tokens).toBeUndefined();
+      }
+    });
+
+    it('boundary check runs BEFORE budget filter (forget wins)', async () => {
+      const rows = rowsSpec([
+        { role: 'system', content: '__forget_boundary__', ageMin: 0 },
+      ]);
+      const { svc } = makeService(async () => [rows]);
+      const result = await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 100_000 });
+      expect(result).toEqual([]);
+    });
+
+    it('debug-logs when turns are dropped', async () => {
+      const rows = rowsSpec([
+        { role: 'user', content: 'a'.repeat(10), ageMin: 0 },
+        { role: 'assistant', content: 'b'.repeat(10), ageMin: 0 },
+        { role: 'user', content: 'c'.repeat(10), ageMin: 0 },
+        { role: 'assistant', content: 'd'.repeat(10), ageMin: 0 },
+      ]);
+      const { svc, warnMock } = makeService(async () => [rows]);
+      const debugMock = jest.fn();
+      (svc as unknown as { logger: { warn: jest.Mock; debug: jest.Mock } }).logger.debug = debugMock;
+      await svc.loadHistory('wechat', 'c1', 'u1', now, { tokenBudget: 6 });
+      expect(debugMock).toHaveBeenCalledWith(expect.stringMatching(/history trimmed.*budget=6/));
+    });
   });
 });
 

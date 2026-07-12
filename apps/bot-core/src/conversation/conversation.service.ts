@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createPool, Pool, RowDataPacket } from 'mysql2/promise';
-import { PlatformName } from '@mpcb/shared';
+import { PlatformName, estimateTokens } from '@mpcb/shared';
 import { ConfigService } from '../common/config/config.service';
 
 export interface ConversationTurn {
   role: 'user' | 'assistant' | 'system';
   content: string;
+}
+
+export interface LoadHistoryOptions {
+  tokenBudget?: number;
 }
 
 @Injectable()
@@ -39,6 +43,7 @@ export class ConversationService {
     chatId: string,
     senderId: string,
     now: number,
+    options?: LoadHistoryOptions,
   ): Promise<ConversationTurn[]> {
     let rows: Array<{ role: 'user' | 'assistant' | 'system'; content: string; created_at: Date }>;
     try {
@@ -75,6 +80,27 @@ export class ConversationService {
     }
 
     surviving.reverse();
-    return surviving;
+
+    if (options?.tokenBudget === undefined || options.tokenBudget <= 0) {
+      return surviving;
+    }
+
+    const enriched = surviving.map(t => ({
+      ...t,
+      tokens: estimateTokens(t.content),
+    }));
+    let total = enriched.reduce((s, t) => s + t.tokens, 0);
+    let keepFrom = 0;
+    while (keepFrom < enriched.length - 1 && total >= options.tokenBudget) {
+      total -= enriched[keepFrom].tokens;
+      keepFrom++;
+    }
+    const trimmed = enriched.slice(keepFrom);
+    if (keepFrom > 0) {
+      this.logger.debug(
+        `history trimmed: dropped ${keepFrom}/${enriched.length} turns (budget=${options.tokenBudget})`,
+      );
+    }
+    return trimmed.map(({ tokens: _tokens, ...t }) => t);
   }
 }
