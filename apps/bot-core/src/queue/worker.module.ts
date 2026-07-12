@@ -46,6 +46,7 @@ export class WorkerModule implements OnModuleInit, OnModuleDestroy {
       { llm: this.llm, kb: this.kb, tool: this.tool },
       this.messageLog,
       this.conversation,
+      this.cfg,
     );
 
     this.pool = createPool({

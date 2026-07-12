@@ -8,6 +8,7 @@ import { ToolRegistry } from '../handlers/tool/tool.handler';
 import { RouteDecision } from '@mpcb/shared';
 import { MessageLogService } from '../messages/message-log.service';
 import { ConversationService, ConversationTurn } from '../conversation/conversation.service';
+import { ConfigService } from '../common/config/config.service';
 
 export interface ProcessResult {
   reply: NormalizedReply;
@@ -26,6 +27,7 @@ export class MessageProcessor {
     private readonly handlers: { llm: LlmHandler; kb: KbHandler; tool: ToolRegistry },
     private readonly messageLog: MessageLogService,
     private readonly conversation: ConversationService,
+    private readonly config: ConfigService,
   ) {}
 
   async process(msg: NormalizedMessage): Promise<ProcessResult> {
@@ -39,6 +41,7 @@ export class MessageProcessor {
         msg.chatId,
         msg.senderId,
         Date.now(),
+        { tokenBudget: this.config.historyTokenBudget },
       );
     } catch (err) {
       this.logger.warn(`loadHistory threw; degrading to empty history: ${err instanceof Error ? err.message : String(err)}`);

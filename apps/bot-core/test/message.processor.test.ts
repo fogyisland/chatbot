@@ -19,6 +19,7 @@ const baseMsg = (over: Partial<NormalizedMessage> = {}): NormalizedMessage => ({
 describe('MessageProcessor', () => {
   const noLog = { upsertUser: async () => {}, upsertAssistant: async () => {}, upsertForgetBoundary: async () => {}, close: async () => {} } as any;
   const noConversation = { loadHistory: async () => [] } as any;
+  const noConfig = { historyTokenBudget: 0 } as any;
 
   function makeAdapters(platform: 'wechat' | 'teams' | 'dingtalk') {
     const adapter: Partial<PlatformAdapter> = {
@@ -36,7 +37,7 @@ describe('MessageProcessor', () => {
     const kb = { handle: async () => ({ text: 'kb' }) };
     const tool = { handle: async () => ({ text: 'tool' }) };
 
-    const proc = new MessageProcessor(map, router as any, { llm, kb, tool } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb, tool } as any, noLog, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'm1', platform: 'wechat' }));
     expect(result.reply.text).toBe('hello');
@@ -52,7 +53,7 @@ describe('MessageProcessor', () => {
   it('returns fallback reply when router returns unknown', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'unknown' as const, reason: 'no match' }) };
-    const proc = new MessageProcessor(map, router as any, {} as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, {} as any, noLog, noConversation, noConfig);
     const result = await proc.process(baseMsg({ msgId: 'm2' }));
     expect(result.reply.text).toContain('无法理解');
   });
@@ -66,7 +67,7 @@ describe('MessageProcessor', () => {
     ]);
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 't-reply' }) };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'm3', platform: 'teams', chatId: 'chat-t' }));
     expect(result.sent).toBe(true);
@@ -79,7 +80,7 @@ describe('MessageProcessor', () => {
     const map = new Map<PlatformName, PlatformAdapter>([['dingtalk', dtAdapter as PlatformAdapter]]);
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'd-reply' }) };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'm4', platform: 'dingtalk' }));
     expect(result.sent).toBe(true);
@@ -91,7 +92,7 @@ describe('MessageProcessor', () => {
     const map = new Map<PlatformName, PlatformAdapter>([['wechat', adapter as PlatformAdapter]]);
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }) };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'm5' }));
     expect(result.sent).toBe(false);
@@ -102,7 +103,7 @@ describe('MessageProcessor', () => {
     const map = new Map<PlatformName, PlatformAdapter>();
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }) };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'm6' }));
     expect(result.sent).toBe(false);
@@ -125,7 +126,7 @@ describe('MessageProcessor', () => {
         return { text: 'reply' };
       },
     };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, noConversation, noConfig);
     await proc.process(baseMsg({ msgId: 'm7' }));
     expect(routerSignal).toBeDefined();
     expect(llmSignal).toBeDefined();
@@ -149,7 +150,7 @@ describe('MessageProcessor', () => {
         { role: 'assistant' as const, content: 'prev-a' },
       ],
     };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, noConfig);
     await proc.process(baseMsg({ msgId: 'mh1' }));
     expect(routerHistory).toEqual([
       { role: 'user', content: 'prev-q' },
@@ -176,7 +177,7 @@ describe('MessageProcessor', () => {
     const conversation = {
       loadHistory: async () => { throw new Error('db down'); },
     };
-    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any);
+    const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, noConfig);
     const result = await proc.process(baseMsg({ msgId: 'mh2' }));
     expect(result.reply.text).toBe('reply');          // worker still completes
     expect(routerHistory).toEqual([]);                  // router sees empty history
@@ -196,7 +197,7 @@ describe('MessageProcessor', () => {
       route: async () => ({ kind: 'command' as const, handler: 'forget' as const, args: '' }),
       getConfig: async () => ({ commands: {}, prefixes: {}, defaultHandler: 'llm' as const, commandOnly: false, forgetReply: 'verbose' as const }),
     };
-    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'fg1', text: '/forget' }));
     expect(result.reply.text).toBe('会话已重置, 请问有什么可以帮你?');
@@ -219,10 +220,48 @@ describe('MessageProcessor', () => {
       route: async () => ({ kind: 'command' as const, handler: 'forget' as const, args: '' }),
       getConfig: async () => ({ commands: {}, prefixes: {}, defaultHandler: 'llm' as const, commandOnly: false, forgetReply: 'silent' as const }),
     };
-    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation);
+    const proc = new MessageProcessor(map, router as any, { llm: { handle: async () => ({ text: 'should-not-reach' }) }, kb: {}, tool: {} } as any, messageLog as any, noConversation, noConfig);
 
     const result = await proc.process(baseMsg({ msgId: 'fg2', text: '/forget' }));
     expect(result.reply.text).toBe('');
     expect(forgetCalls).toBe(1);  // boundary still inserted even when silent
+  });
+
+  it('passes tokenBudget from ConfigService to conversationService.loadHistory', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'reply' }) };
+    const loadHistoryMock = jest.fn(async () => []);
+    const conversation = { loadHistory: loadHistoryMock };
+    const cfg = { historyTokenBudget: 4321 } as any;
+
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg,
+    );
+
+    await proc.process(baseMsg({ msgId: 'm-budget', platform: 'wechat' }));
+
+    expect(loadHistoryMock).toHaveBeenCalledTimes(1);
+    const call = loadHistoryMock.mock.calls[0] as any[];
+    expect(call[0]).toBe('wechat');          // platform
+    expect(call[1]).toBe('c1');              // chatId
+    expect(call[2]).toBe('u1');              // senderId
+    expect(typeof call[3]).toBe('number');   // now
+    expect(call[4]).toEqual({ tokenBudget: 4321 });
+  });
+
+  it('falls back to empty history when loadHistory throws (no tokenBudget leak)', async () => {
+    const { map } = makeAdapters('wechat');
+    const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
+    const llm = { handle: async () => ({ text: 'fallback' }) };
+    const conversation = { loadHistory: async () => { throw new Error('mysql down'); } };
+    const cfg = { historyTokenBudget: 6000 } as any;
+
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg,
+    );
+
+    const result = await proc.process(baseMsg({ msgId: 'm-throw' }));
+    expect(result.reply.text).toBe('fallback');
   });
 });
