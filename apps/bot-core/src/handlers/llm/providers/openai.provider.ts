@@ -23,7 +23,7 @@ interface OpenAIResponse {
 }
 
 export class OpenAIProvider implements LlmProvider {
-  readonly name = 'openai';
+  readonly name: string = 'openai';
   readonly defaultModel: string;
   readonly contextWindow: number;
   private readonly baseUrl: string;

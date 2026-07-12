@@ -14,8 +14,8 @@ interface ClaudeResponse {
 
 @Injectable()
 export class ClaudeProvider implements LlmProvider {
-  readonly name = 'claude';
-  readonly defaultModel = 'claude-3-5-sonnet-20241022';
+  readonly name: string = 'claude';
+  readonly defaultModel: string = 'claude-3-5-sonnet-20241022';
   readonly contextWindow = 200_000;
   private readonly logger = new Logger(ClaudeProvider.name);
   private readonly baseUrl = 'https://api.anthropic.com';

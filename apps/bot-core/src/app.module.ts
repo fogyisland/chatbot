@@ -9,11 +9,13 @@ import { HandlersModule } from './handlers/handlers.module';
 import { WorkerModule } from './queue/worker.module';
 import { AdminApiModule } from './admin-api/admin.module';
 import { MessagesModule } from './messages/messages.module';
+import { SummarizerModule } from './handlers/summarizer/summarizer.module';
 
 @Module({
   imports: [
     ConfigModule, LoggerModule,
     PlatformModule, QueueModule, RouterModule,
+    SummarizerModule,            // ← NEW
     HandlersModule, WorkerModule, AdminApiModule,
     MessagesModule,
   ],
