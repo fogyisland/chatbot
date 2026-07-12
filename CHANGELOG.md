@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.0 — 2026-07-10
+
+User-initiated conversation reset via `/forget`. Soft boundary: writes a `messages` row with `role='system'`, `content='__forget_boundary__'` keyed by the user's `msg_id` (idempotent). `ConversationService` walker now breaks at boundary markers, so the next user message after `/forget` sees an empty history (fresh conversation).
+
+- New command `/forget` — resets the initiator's session only (per-`(platform, chat_id, sender_id)`); other users in the same chat are unaffected.
+- New `MessageLogService.upsertForgetBoundary(msg)` — INSERT … ON DUPLICATE KEY UPDATE on `(platform, msg_id)`. Propagates errors (unlike `upsertUser`/`upsertAssistant`) so the processor knows whether the boundary landed.
+- `ConversationService.loadHistory()` walker breaks at `role='system', content='__forget_boundary__'` rows in addition to the existing 30-min idle gap.
+- `MessageProcessor.dispatch()` handles `decision.handler === 'forget'`: calls `upsertForgetBoundary`, then returns the reply per `RouterConfig.forgetReply`.
+- New `RouterConfig.forgetReply: 'verbose' | 'silent'` field. Default `'verbose'` returns `会话已重置, 请问有什么可以帮你?`. `'silent'` returns an empty NormalizedReply (boundary still inserted, but no public reply).
+- `RouteDecision` command-handler union widened to include `'forget'` in `packages/shared`.
+- New `RouterService.getConfig()` accessor (uses the existing 60s cache) so the processor can read `forgetReply` per-message without re-fetching.
+- DB error on boundary insert: logged warn + fallback to default LLM handler with the user's original text — user sees a normal reply, forget didn't happen (acceptable degradation).
+
+Tests: 107/107 across 29 suites (was 101/101 in v0.2.1; +6: 6 ConversationService walker, 2 MessageLogService, 2 MessageProcessor, 1 router — actual run by T4 implementer was 107/107). `pnpm build` green. `pnpm -r lint` green.
+
 ## v0.2.1 — 2026-07-10
 
 Post-review fixes over v0.2.0. The v0.2.0 tag pointed at a commit that crashes the worker on startup (DI graph could not resolve `ConversationService`'s `Pool` / `'LOGGER'` dependencies). All consumers should use v0.2.1 instead.
