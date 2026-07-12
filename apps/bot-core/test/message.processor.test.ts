@@ -319,4 +319,63 @@ describe('MessageProcessor', () => {
     const result = await proc.process(baseMsg({ msgId: 'm-throw' }));
     expect(result.reply.text).toBe('fallback');
   });
+
+  // v0.6.0 fail-open contract (spec §3.1, §4.3, §5): if loadOrBuildHistory
+  // throws (e.g. SummarizationUnavailableError), MessageProcessor must
+  // fall back to loadHistory so the user gets v0.5 FIFO behavior — NOT
+  // strictly-worse empty history.
+  it('fail-open: loadOrBuildHistory throws SummarizationUnavailableError → loadHistory fallback succeeds', async () => {
+    const { map } = makeAdapters('wechat');
+    let routerHistory: unknown[] | undefined;
+    const router = {
+      route: async (_msg: unknown, ctx: { history: unknown[] }) => {
+        routerHistory = ctx.history;
+        return { kind: 'llm' as const, prompt: 'hi' };
+      },
+    };
+    const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 8_000 };
+    const conversation = {
+      loadOrBuildHistory: async () => {
+        throw new Error('SummarizationUnavailableError: chain dead');
+      },
+      loadHistory: async () => [
+        { role: 'user' as const, content: 'prev-q' },
+        { role: 'assistant' as const, content: 'prev-a' },
+      ],
+    };
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg as any,
+    );
+    const result = await proc.process(baseMsg({ msgId: 'failopen1' }));
+    expect(result.reply.text).toBe('reply');
+    // The router received the v0.5 fallback history, NOT empty.
+    expect(routerHistory).toEqual([
+      { role: 'user', content: 'prev-q' },
+      { role: 'assistant', content: 'prev-a' },
+    ]);
+  });
+
+  it('fail-open: both loadOrBuildHistory AND loadHistory throw → empty history (final degrade)', async () => {
+    const { map } = makeAdapters('wechat');
+    let routerHistory: unknown[] | undefined;
+    const router = {
+      route: async (_msg: unknown, ctx: { history: unknown[] }) => {
+        routerHistory = ctx.history;
+        return { kind: 'llm' as const, prompt: 'hi' };
+      },
+    };
+    const llm = { handle: async () => ({ text: 'still-replies' }), contextWindow: 8_000 };
+    const conversation = {
+      loadOrBuildHistory: async () => { throw new Error('summarizer dead'); },
+      loadHistory: async () => { throw new Error('mysql dead'); },
+    };
+    const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
+    const proc = new MessageProcessor(
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, cfg as any,
+    );
+    const result = await proc.process(baseMsg({ msgId: 'failopen2' }));
+    expect(result.reply.text).toBe('still-replies');
+    expect(routerHistory).toEqual([]);
+  });
 });
