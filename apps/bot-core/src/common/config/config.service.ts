@@ -71,4 +71,10 @@ export class ConfigService {
   get dingtalkAppSecret(): string {
     return process.env.DINGTALK_APP_SECRET ?? '';
   }
+  get historyTokenBudget(): number {
+    const raw = process.env.HISTORY_TOKEN_BUDGET;
+    if (raw === undefined) return 6000;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 6000;
+  }
 }
