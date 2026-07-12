@@ -36,12 +36,12 @@ export class MessageProcessor {
 
     let history: ConversationTurn[] = [];
     try {
-      history = await this.conversation.loadHistory(
+      history = await this.conversation.loadOrBuildHistory(
         msg.platform,
         msg.chatId,
         msg.senderId,
         Date.now(),
-        { tokenBudget: this.computeHistoryBudget() },
+        { tokenBudget: this.computeHistoryBudget(), enableSummarization: this.config.enableSummarization },
       );
     } catch (err) {
       this.logger.warn(`loadHistory threw; degrading to empty history: ${err instanceof Error ? err.message : String(err)}`);
