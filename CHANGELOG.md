@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.5.0 — 2026-07-12
+
+Per-model conversation-history token budget. v0.4's flat `HISTORY_TOKEN_BUDGET` (default 6000) is replaced by `min(historyTokenBudget, floor(provider.contextWindow × HISTORY_BUDGET_RATIO))`, so long-context models use more of their room by default and short-context models (e.g. Tongyi 8k) are kept honest. v0.4's explicit-cap semantic (`HISTORY_TOKEN_BUDGET` value honored) is preserved — the min wins.
+
+**New env:**
+- `HISTORY_BUDGET_RATIO` (default `0.5`, float). Validated `0 ≤ r ≤ 1`. `r = 0` is the "disable per-model" signal (equivalent to v0.4's `historyTokenBudget = 0` via the `min()` precedence). Invalid (`NaN`, `<0`, `>1`) falls back to `0.5` with a one-time warn log per process.
+
+**New APIs:**
+- `ConfigService.historyBudgetRatio: number` getter reads the env.
+- `LlmHandler.contextWindow: number` getter delegates to the underlying `LlmProvider.contextWindow` (foundation laid in v0.4). For `FallbackProvider`: chain head's window, or `0` if chain is empty (v0.4 precedent).
+
+**New behavior:**
+- Effective budget formula: `effective = cfg.historyTokenBudget > 0 ? min(historyTokenBudget, floor(ctxWin * ratio)) : floor(ctxWin * ratio)`. Called once per `MessageProcessor.process()` via the new private helper `computeHistoryBudget()`.
+- Backwards-compatible: v0.4 env-only deployments continue to work. Long-context models (Claude 200k, OpenAI 128k) now get `min(6000, 50–100k)` (still capped at 6000). Small-context models (Tongyi 8k) now get `min(6000, 4000) = 4000` — more permissive in headroom than v0.4's flat 6000.
+
+**Refactor:**
+- `MessageProcessor.process()` 1-line change: inline `this.config.historyTokenBudget` replaced with `this.computeHistoryBudget()`. Constructor signature unchanged from v0.4 (still 6 args). No DI seam change.
+
+Tests: 160/160 across 35 suites (was 145/33 in v0.4.0; +15 tests, +2 suites: 7 `ConfigService.historyBudgetRatio`, 3 `LlmHandler.contextWindow`, 6 `MessageProcessor.computeHistoryBudget`; -1 v0.4 budget pass-through test replaced by the new helper-wired `budget1`). `pnpm build` green. `pnpm -r lint` green.
+
 ## v0.4.0 — 2026-07-12
 
 Token-budget-aware truncation for conversation history. The hard 10-turn cap from v0.2 is replaced by a configurable token budget, so long CJK conversations can keep more context within budget while short ASCII conversations trim aggressively to fit. Token budget is the sole cap; the old 10-turn backstop is removed.
