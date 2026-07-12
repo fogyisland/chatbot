@@ -98,4 +98,41 @@ export class ConfigService {
     }
     return n;
   }
+
+  /**
+   * v0.6: opt-in gate for sliding-window summarization.
+   * When false (default), loadOrBuildHistory degrades to loadHistory-only.
+   * Truthy values: 1, true, yes, on (case-insensitive). Anything else → false.
+   */
+  get enableSummarization(): boolean {
+    const raw = process.env.ENABLE_SUMMARIZATION;
+    if (raw === undefined) return false;
+    return /^(1|true|yes|on)$/i.test(raw);
+  }
+
+  /**
+   * v0.6: ordered list of summarizer provider-name strings.
+   * Default: ['claude-haiku', 'openai-mini'] (cheap model classes).
+   * Parsed from SUMMARIZER_PROVIDERS env (comma-separated, trimmed, empty filtered).
+   * Provider-name strings map to registered LlmProvider instances in SummarizerModule.
+   */
+  get summarizerProviderChain(): string[] {
+    const raw = process.env.SUMMARIZER_PROVIDERS;
+    if (raw === undefined || raw.trim() === '') {
+      return ['claude-haiku', 'openai-mini'];
+    }
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  /**
+   * v0.6: context-window budget for the summarizer small-LLM input pre-trim guard.
+   * Default: 100_000 tokens (cheap-model safe).
+   * Invalid env (NaN, < 0) → 100_000.
+   */
+  get summarizerContextWindow(): number {
+    const raw = process.env.SUMMARIZER_CONTEXT_WINDOW;
+    if (raw === undefined) return 100_000;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 100_000;
+  }
 }
