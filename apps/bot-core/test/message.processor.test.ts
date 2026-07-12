@@ -18,7 +18,7 @@ const baseMsg = (over: Partial<NormalizedMessage> = {}): NormalizedMessage => ({
 
 describe('MessageProcessor', () => {
   const noLog = { upsertUser: async () => {}, upsertAssistant: async () => {}, upsertForgetBoundary: async () => {}, close: async () => {} } as any;
-  const noConversation = { loadHistory: async () => [] } as any;
+  const noConversation = { loadOrBuildHistory: async () => [] } as any;
   const noConfig = { historyTokenBudget: 0, historyBudgetRatio: 0.5 } as any;
 
   function makeAdapters(platform: 'wechat' | 'teams' | 'dingtalk') {
@@ -145,7 +145,7 @@ describe('MessageProcessor', () => {
     };
     const llm = { handle: async () => ({ text: 'reply' }) };
     const conversation = {
-      loadHistory: async () => [
+      loadOrBuildHistory: async () => [
         { role: 'user' as const, content: 'prev-q' },
         { role: 'assistant' as const, content: 'prev-a' },
       ],
@@ -175,7 +175,7 @@ describe('MessageProcessor', () => {
       },
     };
     const conversation = {
-      loadHistory: async () => { throw new Error('db down'); },
+      loadOrBuildHistory: async () => { throw new Error('db down'); },
     };
     const proc = new MessageProcessor(map, router as any, { llm, kb: {}, tool: {} } as any, noLog, conversation as any, noConfig);
     const result = await proc.process(baseMsg({ msgId: 'mh2' }));
@@ -231,85 +231,85 @@ describe('MessageProcessor', () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_000 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 4321, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget1' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4321 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4321 });
   });
 
   it('computeHistoryBudget: perModel (4000) beats explicit (6000) on Tongyi-class 8k context', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 8_000 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget2' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4000 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 4000 });
   });
 
   it('computeHistoryBudget: explicit=0 falls back to perModel (64k on 128k model, ratio 0.5)', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 128_000 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 0, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget3' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 64_000 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 64_000 });
   });
 
   it('computeHistoryBudget: ratio=0 disables perModel (effective = min(explicit, 0) = 0)', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_000 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget4' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
   });
 
   it('computeHistoryBudget: empty FallbackProvider chain (ctxWindow=0) yields 0 even with explicit cap', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 0 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget5' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 0 });
   });
 
   it('computeHistoryBudget: Math.floor applied (200001 * 0.5 = 100000.5 → 100000)', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'reply' }), contextWindow: 200_001 };
-    const loadHistoryMock = jest.fn(async () => []);
+    const loadOrBuildHistoryMock = jest.fn(async () => []);
     const cfg = { historyTokenBudget: 0, historyBudgetRatio: 0.5 };
     const proc = new MessageProcessor(
-      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadHistory: loadHistoryMock } as any, cfg as any,
+      map, router as any, { llm, kb: {}, tool: {} } as any, noLog, { loadOrBuildHistory: loadOrBuildHistoryMock } as any, cfg as any,
     );
     await proc.process(baseMsg({ msgId: 'budget6' }));
-    expect((loadHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 100_000 });
+    expect((loadOrBuildHistoryMock.mock.calls[0] as any[])[4]).toEqual({ tokenBudget: 100_000 });
   });
 
-  it('falls back to empty history when loadHistory throws (no tokenBudget leak)', async () => {
+  it('falls back to empty history when loadOrBuildHistory throws (no tokenBudget leak)', async () => {
     const { map } = makeAdapters('wechat');
     const router = { route: async () => ({ kind: 'llm' as const, prompt: 'hi' }) };
     const llm = { handle: async () => ({ text: 'fallback' }) };
-    const conversation = { loadHistory: async () => { throw new Error('mysql down'); } };
+    const conversation = { loadOrBuildHistory: async () => { throw new Error('mysql down'); } };
     const cfg = { historyTokenBudget: 6000, historyBudgetRatio: 0.5 } as any;
 
     const proc = new MessageProcessor(
