@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Backwards-compatible with v0.4: v0.4 callers that omit `HISTORY_BUDGET_RATIO` continue to work; effective budget becomes `min(6000, floor(contextWindow × 0.5))` on long-context models (more conservative than v0.4's flat 6000 in most cases; never less conservative on Tongyi-class 8k models).
-- `HISTORY_BUDGET_RATIO` default `0.5`. Validation: `0 < r ≤ 1`; invalid (`NaN`, `<=0`, `>1`) falls back to `0.5` with a one-time warn log per process.
+- `HISTORY_BUDGET_RATIO` default `0.5`. Validation: `0 ≤ r ≤ 1`; invalid (`NaN`, `<0`, `>1`) falls back to `0.5` with a one-time warn log per process. (`r = 0` is allowed and means "disable per-model" — equivalent to v0.4's `historyTokenBudget = 0` via the min() precedence.)
 - Effective budget formula: `explicit = cfg.historyTokenBudget` (0 = unset); `effective = explicit > 0 ? min(explicit, floor(ctxWin * ratio)) : floor(ctxWin * ratio)`.
 - All values are integers (`Math.floor` on the per-model computation).
 - New `.ts` files end with `\n` (POSIX trailing newline).
@@ -45,7 +45,7 @@
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks (independent)
-- Produces: `ConfigService.historyBudgetRatio: number` — reads `process.env.HISTORY_BUDGET_RATIO`; default `0.5`; validates `0 < r ≤ 1`; falls back to `0.5` on invalid with one-time warn log
+- Produces: `ConfigService.historyBudgetRatio: number` — reads `process.env.HISTORY_BUDGET_RATIO`; default `0.5`; validates `0 ≤ r ≤ 1`; falls back to `0.5` on invalid with one-time warn log
 
 - [ ] **Step 1: Write the failing test file**
 
@@ -80,7 +80,7 @@ describe('ConfigService.historyBudgetRatio', () => {
     expect(svc.historyBudgetRatio).toBe(0.5);
   });
 
-  it('returns the env value when valid (0 < r <= 1)', () => {
+  it('returns the env value when valid (0 <= r <= 1)', () => {
     process.env.HISTORY_BUDGET_RATIO = '0.7';
     expect(svc.historyBudgetRatio).toBe(0.7);
   });
@@ -147,13 +147,13 @@ export class ConfigService {
     const raw = process.env.HISTORY_BUDGET_RATIO;
     if (raw === undefined) return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
     const n = parseFloat(raw);
-    if (!Number.isFinite(n) || n <= 0 || n > 1) {
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
       if (!this.historyBudgetRatioWarned) {
         this.historyBudgetRatioWarned = true;
         this.logger.warn(
           `HISTORY_BUDGET_RATIO=${JSON.stringify(raw)} invalid; ` +
           `falling back to ${ConfigService.DEFAULT_HISTORY_BUDGET_RATIO}. ` +
-          `Expected 0 < ratio <= 1.`,
+          `Expected 0 <= ratio <= 1.`,
         );
       }
       return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
@@ -438,8 +438,8 @@ Add the private helper method below `dispatch()`:
  */
 private computeHistoryBudget(): number {
   const contextWindow = this.handlers.llm.contextWindow;
-  const ratio = this.cfg.historyBudgetRatio;
-  const explicit = this.cfg.historyTokenBudget;
+  const ratio = this.config.historyBudgetRatio;
+  const explicit = this.config.historyTokenBudget;
   const perModel = Math.floor(contextWindow * ratio);
   return explicit > 0 ? Math.min(explicit, perModel) : perModel;
 }
@@ -508,7 +508,7 @@ Prepend to `CHANGELOG.md` (above the `## v0.4.0 — 2026-07-12` section):
 Per-model conversation-history token budget. v0.4's flat `HISTORY_TOKEN_BUDGET` (default 6000) is now `min(historyTokenBudget, floor(provider.contextWindow × HISTORY_BUDGET_RATIO))`, so long-context models use more of their room by default and short-context models (Tongyi 8k) are kept honest. `HISTORY_TOKEN_BUDGET=0` remains the explicit opt-out.
 
 **New APIs:**
-- `ConfigService.historyBudgetRatio` getter reads env `HISTORY_BUDGET_RATIO` (default `0.5`, float). Validated `0 < r ≤ 1`; invalid falls back to `0.5` with a one-time warn log. `r = 0` is "disable per-model" (treated identically to v0.4's `historyTokenBudget = 0` via the min() precedence).
+- `ConfigService.historyBudgetRatio` getter reads env `HISTORY_BUDGET_RATIO` (default `0.5`, float). Validated `0 ≤ r ≤ 1`; invalid falls back to `0.5` with a one-time warn log. `r = 0` is "disable per-model" (treated identically to v0.4's `historyTokenBudget = 0` via the min() precedence).
 - `LlmHandler.contextWindow` getter delegates to the underlying `LlmProvider.contextWindow` (foundation laid in v0.4). For `FallbackProvider`: chain head's window, or `0` if chain is empty (v0.4 precedent).
 
 **New behavior:**

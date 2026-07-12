@@ -26,7 +26,7 @@ describe('ConfigService.historyBudgetRatio', () => {
     expect(svc.historyBudgetRatio).toBe(0.5);
   });
 
-  it('returns the env value when valid (0 < r <= 1)', () => {
+  it('returns the env value when valid (0 <= r <= 1)', () => {
     process.env.HISTORY_BUDGET_RATIO = '0.7';
     expect(svc.historyBudgetRatio).toBe(0.7);
   });

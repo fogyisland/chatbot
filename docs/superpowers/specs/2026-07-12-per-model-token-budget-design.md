@@ -39,7 +39,7 @@ v0.4.0 introduced a single global `HISTORY_TOKEN_BUDGET` (default `6000`) and la
 | Dimension | Choice |
 |---|---|
 | Budget source | `Math.floor(provider.contextWindow × HISTORY_BUDGET_RATIO)`, optionally min-capped by `HISTORY_TOKEN_BUDGET` when set > 0 |
-| Default ratio | `HISTORY_BUDGET_RATIO = 0.5` (env-overridable; 0 < r ≤ 1; invalid → warn + 0.5) |
+| Default ratio | `HISTORY_BUDGET_RATIO = 0.5` (env-overridable; 0 ≤ r ≤ 1; invalid → warn + 0.5) |
 | Effective budget formula | `explicit = cfg.historyTokenBudget` (0 = unset). `effective = explicit > 0 ? min(explicit, floor(ctxWin * ratio)) : floor(ctxWin * ratio)` |
 | Token counting | Unchanged from v0.4 (shared `estimateTokens` in `packages/shared`) |
 | Truncation site | Unchanged from v0.4 (`ConversationService.loadHistory`) |
@@ -52,7 +52,7 @@ v0.4.0 introduced a single global `HISTORY_TOKEN_BUDGET` (default `6000`) and la
 
 - v0.4 already wired `LlmProvider.contextWindow` and `ConfigService.historyTokenBudget`. v0.5 is the connector: one new env, one accessor, one formula.
 - The `min(explicit, perModel)` rule preserves v0.4's "set explicit cap → it wins" semantic (e.g. ops tightening a small-context model like Tongyi to `8000` retains the cap even though per-model default would also be `4000`).
-- The `0 < r ≤ 1` validation: a ratio ≤ 0 disables trimming; a ratio > 1 leaves no room for system/KB/reply. Both fall back to `0.5` with a one-line startup warn so misconfigured deployments don't silently truncate to nothing.
+- The `0 ≤ r ≤ 1` validation: a ratio < 0 is invalid; a ratio > 1 leaves no room for system/KB/reply. Both fall back to `0.5` with a one-line startup warn. `r = 0` is allowed and means "disable per-model budget" (treated identically to v0.4's `historyTokenBudget = 0` via the min() precedence).
 - `Math.floor` keeps `tokenBudget` as an integer — `ConversationService` signature accepts `number` and treats fractional values the same as their floor, but integer is cleaner.
 - No new DI service means no new seam for the recurring `useFactory` DI bug class (v0.2.0, v0.3.0). `LlmHandler.contextWindow` is a simple getter delegating to an existing field.
 
@@ -103,7 +103,7 @@ v0.4.0 introduced a single global `HISTORY_TOKEN_BUDGET` (default `6000`) and la
 
 ```
 contextWindow  : number   // from LlmHandler.contextWindow
-ratio          : number   // from ConfigService.historyBudgetRatio (validated 0<r≤1)
+ratio          : number   // from ConfigService.historyBudgetRatio (validated 0≤r≤1)
 explicitBudget : number   // from ConfigService.historyTokenBudget (0=unset)
 
 perModel       = Math.floor(contextWindow * ratio)
@@ -146,13 +146,13 @@ get historyBudgetRatio(): number {
   const raw = process.env.HISTORY_BUDGET_RATIO;
   if (raw === undefined) return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
   const n = parseFloat(raw);
-  if (!Number.isFinite(n) || n <= 0 || n > 1) {
+  if (!Number.isFinite(n) || n < 0 || n > 1) {
     if (!this.historyBudgetRatioWarned) {
       this.historyBudgetRatioWarned = true;
       this.logger.warn(
         `HISTORY_BUDGET_RATIO=${JSON.stringify(raw)} invalid; ` +
         `falling back to ${ConfigService.DEFAULT_HISTORY_BUDGET_RATIO}. ` +
-        `Expected 0 < ratio ≤ 1.`,
+        `Expected 0 <= ratio <= 1.`,
       );
     }
     return ConfigService.DEFAULT_HISTORY_BUDGET_RATIO;
@@ -326,7 +326,7 @@ Mandatory. v0.5 has one new seam and a few precision points:
 - **Ambiguity:**
   - "Per-model default" defined concretely via the formula table in §3.3.
   - "Explicit cap honored" defined concretely via the `min` rule.
-  - "Invalid ratio" defined concretely as `NaN || ≤0 || >1`.
+  - "Invalid ratio" defined concretely as `NaN || <0 || >1`.
   - "Ratio=0" edge case documented explicitly in §5 (conservative: trimming off when explicit is also small).
   - "Empty FallbackProvider chain" degenerate case covered in §5.
 
