@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createPool, Pool } from 'mysql2/promise';
 import { ConfigService } from '../common/config/config.service';
 import { NormalizedMessage, NormalizedReply } from '@mpcb/shared';
+import * as crypto from 'crypto';
 
 /**
  * Persists inbound user messages and outbound assistant replies to the
@@ -83,6 +84,30 @@ export class MessageLogService {
        VALUES (?, ?, ?, ?, 'system', ?)
        ON DUPLICATE KEY UPDATE id = id`,
       [msg.msgId, msg.platform, msg.chatId, msg.senderId, MessageLogService.FORGET_BOUNDARY_CONTENT],
+    );
+  }
+
+  /**
+   * v0.6: write a summary row to messages, idempotent on a deterministic
+   * sessionKey-derived msg_id. Subsequent calls with the same sessionKey
+   * UPDATE the same row (incremental merge — not a new row).
+   *
+   * Error propagation parallels upsertForgetBoundary — the caller
+   * (ConversationService.loadOrBuildHistory) decides whether to degrade.
+   */
+  async upsertSummary(
+    content: string,
+    platform: string,
+    chatId: string,
+    senderId: string,
+  ): Promise<void> {
+    const sessionKey = `${platform}::${chatId}::${senderId}`;
+    const msgId = `summary-${crypto.createHash('sha1').update(sessionKey).digest('hex').slice(0, 16)}`;
+    await this.getPool().query(
+      `INSERT INTO messages (msg_id, platform, chat_id, sender_id, role, content)
+       VALUES (?, ?, ?, ?, 'summary', ?)
+       ON DUPLICATE KEY UPDATE content = VALUES(content)`,
+      [msgId, platform, chatId, senderId, content],
     );
   }
 
