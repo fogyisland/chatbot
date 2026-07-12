@@ -24,11 +24,15 @@ export class LlmHandler implements Handler {
   }
 
   async handle(input: RouteDecision & { kind: 'llm' }, ctx: HandlerContext): Promise<NormalizedReply> {
+    // v0.6 seam: drop 'summary' rows before the API call — upstream providers
+    // (Claude/OpenAI/Tongyi/DeepSeek) don't accept that role. T6 will replace
+    // this strip with rendering the summary into a system preamble.
+    const verbatimHistory = ctx.history.filter((t) => t.role !== 'summary');
     const req: ChatRequest = {
       model: this.provider.defaultModel,
       systemPrompt: input.systemPrompt,
       messages: [
-        ...ctx.history,
+        ...verbatimHistory,
         { role: 'user', content: input.prompt },
       ],
       // Forward caller-supplied abort signal so a 30s timeout (or worker

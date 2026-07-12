@@ -1,4 +1,6 @@
-export type ChatRole = 'user' | 'assistant' | 'system';
+// v0.6: widened to include 'summary' for sliding-window summarization. Providers
+// should NOT see 'summary' rows — LlmHandler filters them before the API call.
+export type ChatRole = 'user' | 'assistant' | 'system' | 'summary';
 
 export interface ChatMessage {
   role: ChatRole;

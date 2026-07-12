@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { ConversationService } from '../src/conversation/conversation.service';
 import { ConfigService } from '../src/common/config/config.service';
+import { SummarizationService } from '../src/handlers/summarizer/summarizer.service';
+import { MessageLogService } from '../src/messages/message-log.service';
 
 // Minimal ConfigService stub providing only the fields getPool() reads.
 function makeConfigStub(): ConfigService {
@@ -11,6 +13,22 @@ function makeConfigStub(): ConfigService {
     mysqlPassword: 'mpcb_pw',
     mysqlDatabase: 'mpcb',
   } as unknown as ConfigService;
+}
+
+// v0.6 seam: ConversationService constructor widened to (cfg, summarizer, messageLog).
+// These stubs are inert — loadHistory tests never call loadOrBuildHistory, so the
+// extra ctor args are unused. We need real-shape stubs because ts-jest now
+// enforces the 3-arg signature.
+function makeSummarizerStub(): SummarizationService {
+  return {
+    summarize: jest.fn(async () => ''),
+    contextWindow: 100_000,
+  } as unknown as SummarizationService;
+}
+function makeMessageLogStub(): MessageLogService {
+  return {
+    upsertSummary: jest.fn(async () => undefined),
+  } as unknown as MessageLogService;
 }
 
 // Inject a pool so the service never calls real MySQL during unit tests.
@@ -26,7 +44,7 @@ function makeService(impl: (sql: string, params: unknown[]) => Promise<unknown>)
       return impl(sql, params);
     },
   };
-  const svc = new ConversationService(makeConfigStub());
+  const svc = new ConversationService(makeConfigStub(), makeSummarizerStub(), makeMessageLogStub());
   injectPool(svc, pool);
   // Capture warn() calls on the private logger so the MySQL-throw test stays valid.
   const warnMock = jest.fn();
@@ -389,6 +407,22 @@ describe('ConversationService DI', () => {
             mysqlUser: 'u',
             mysqlPassword: '',
             mysqlDatabase: 'd',
+          },
+        },
+        // v0.6 seam: ctor widened to (cfg, summarizer, messageLog). Provide
+        // stubs so this canary mirrors the production DI graph without
+        // pulling in the full SummarizerModule + MessagesModule chain.
+        {
+          provide: SummarizationService,
+          useValue: {
+            summarize: jest.fn(async () => ''),
+            contextWindow: 100_000,
+          },
+        },
+        {
+          provide: MessageLogService,
+          useValue: {
+            upsertSummary: jest.fn(async () => undefined),
           },
         },
       ],
